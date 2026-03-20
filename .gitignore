@@ -1,0 +1,54 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ── Entornos virtuales ────────────────────────────────────────────────────────
+venv/
+env/
+.venv/
+ENV/
+
+# ── Variables de entorno (NUNCA subir) ────────────────────────────────────────
+.env
+.env.*
+*.env
+
+# ── Base de datos local ───────────────────────────────────────────────────────
+*.db
+*.sqlite3
+entregables.db
+
+# ── Archivos generados / caché Flask ─────────────────────────────────────────
+flask_session/
+instance/
+exports/
+
+# ── Archivos de carga temporal ───────────────────────────────────────────────
+static/uploads/
+*.xlsx.tmp
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.user
+*.swp
+
+# ── Windows ───────────────────────────────────────────────────────────────────
+Thumbs.db
+desktop.ini
+*.lnk
+ehthumbs.db
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Node (package-lock generado por alguna herramienta) ──────────────────────
+node_modules/

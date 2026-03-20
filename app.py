@@ -1945,4 +1945,6 @@ def cargar_layout():
 if __name__ == '__main__':
     if not use_pg:
         init_db()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port  = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV', 'production') != 'production'
+    app.run(debug=debug, host='0.0.0.0', port=port)
