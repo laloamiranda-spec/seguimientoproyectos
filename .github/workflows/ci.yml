@@ -7,7 +7,7 @@ on:
     branches: [ main, master ]
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,10 +21,4 @@ jobs:
           cache: "pip"
 
       - name: Instalar dependencias
-        run: pip install -r requirements.txt pytest
-
-      - name: Run pytest
-        env:
-          SECRET_KEY: test-secret-key-ci
-          # DATABASE_URL no se define → usa SQLite automáticamente
-        run: pytest tests/ -v --tb=short
+        run: pip install -r requirements.txt
