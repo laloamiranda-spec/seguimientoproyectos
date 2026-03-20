@@ -1,0 +1,328 @@
+{% extends 'base.html' %}
+{% block content %}
+
+{# ── Header ──────────────────────────────────────────────────────── #}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+  <div>
+    <h2 class="fw-bold mb-0"><i class="bi bi-bullseye me-2 text-primary"></i>OKRs</h2>
+    <p class="text-muted mb-0">
+      Objetivos y Key Results
+      {% if ciclo_activo %}
+        <span class="badge bg-primary ms-2" style="font-size:.75rem">
+          {{ ciclo_activo.nombre }}
+          {% if ciclo_activo.fecha_inicio and ciclo_activo.fecha_fin %}
+            · {{ ciclo_activo.fecha_inicio }} → {{ ciclo_activo.fecha_fin }}
+          {% endif %}
+        </span>
+      {% endif %}
+    </p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap align-items-center">
+    {# Selector de ciclo #}
+    {% if ciclos %}
+    <form method="GET" action="{{ url_for('okr') }}" class="d-flex align-items-center gap-2">
+      <select name="ciclo" class="form-select form-select-sm" style="max-width:200px" onchange="this.form.submit()">
+        {% for c in ciclos %}
+          <option value="{{ c.id }}" {% if ciclo_activo and c.id == ciclo_activo.id %}selected{% endif %}>
+            {{ c.nombre }}{% if c.activo %} ★{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </form>
+    {% endif %}
+    <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalCiclo">
+      <i class="bi bi-calendar-plus me-1"></i>Nuevo ciclo
+    </button>
+    {% if ciclo_activo %}
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalObjetivo">
+      <i class="bi bi-plus-lg me-1"></i>Nuevo objetivo
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Sin ciclos ───────────────────────────────────────────────────── #}
+{% if not ciclos %}
+<div class="empty-state" style="padding:4rem">
+  <i class="bi bi-bullseye" style="font-size:3rem;opacity:.2;color:var(--primary)"></i>
+  <p class="mt-3 mb-1 fw-600">No hay ciclos OKR configurados</p>
+  <p class="text-muted mb-3">Crea tu primer ciclo para comenzar a definir Objetivos y Key Results.</p>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalCiclo">
+    <i class="bi bi-calendar-plus me-1"></i>Crear primer ciclo
+  </button>
+</div>
+{% else %}
+
+{# ── KPI resumen del ciclo activo ─────────────────────────────────── #}
+{% if ciclo_activo and objetivos %}
+<div class="row g-3 mb-4">
+  {% set total_obj = objetivos|length %}
+  {% set obj_verde    = objetivos|selectattr('semaforo','equalto','verde')   |list|length %}
+  {% set obj_amarillo = objetivos|selectattr('semaforo','equalto','amarillo')|list|length %}
+  {% set obj_rojo     = objetivos|selectattr('semaforo','equalto','rojo')    |list|length %}
+  {% set avg_prog = (objetivos|sum(attribute='progreso') / total_obj)|round|int if total_obj else 0 %}
+
+  <div class="col-6 col-md-3">
+    <div class="card card-stat card-primary">
+      <div><small class="text-muted">Objetivos</small><h3 class="mt-1">{{ total_obj }}</h3><p class="mb-0 text-muted" style="font-size:.78rem">en este ciclo</p></div>
+      <div class="stat-icon" style="background:var(--primary-soft);color:var(--primary)"><i class="bi bi-flag"></i></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card card-stat card-success">
+      <div><small class="text-muted">Progreso promedio</small><h3 class="mt-1">{{ avg_prog }}%</h3><p class="mb-0 text-muted" style="font-size:.78rem">todos los objetivos</p></div>
+      <div class="stat-icon" style="background:var(--success-soft);color:var(--success)"><i class="bi bi-bar-chart-line"></i></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card card-stat card-success">
+      <div><small class="text-muted">En tiempo</small><h3 class="mt-1" style="color:var(--success)">{{ obj_verde }}</h3><p class="mb-0 text-muted" style="font-size:.78rem">≥70% avance</p></div>
+      <div class="stat-icon" style="background:var(--success-soft);color:var(--success)"><i class="bi bi-circle-fill"></i></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card card-stat {% if obj_rojo > 0 %}card-danger{% else %}card-warning{% endif %}">
+      <div><small class="text-muted">En riesgo / Atrasados</small><h3 class="mt-1">{{ obj_amarillo + obj_rojo }}</h3><p class="mb-0 text-muted" style="font-size:.78rem">requieren atención</p></div>
+      <div class="stat-icon" style="background:var(--warning-soft);color:var(--warning)"><i class="bi bi-exclamation-triangle"></i></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Lista de objetivos ───────────────────────────────────────────── #}
+{% if ciclo_activo and not objetivos %}
+<div class="empty-state" style="padding:3rem">
+  <i class="bi bi-flag" style="font-size:2.5rem;opacity:.2;color:var(--primary)"></i>
+  <p class="mt-3 mb-1 fw-600">Sin objetivos en este ciclo</p>
+  <p class="text-muted mb-3">Agrega tu primer objetivo para comenzar.</p>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalObjetivo">
+    <i class="bi bi-plus-lg me-1"></i>Nuevo objetivo
+  </button>
+</div>
+{% endif %}
+
+<div class="row g-4">
+  {% for obj in objetivos %}
+  <div class="col-12 col-lg-6">
+    <div class="card h-100" style="border-left:4px solid {{ obj.color }}">
+      <div class="card-header-custom" style="border-bottom:1px solid var(--border)">
+        <div class="d-flex align-items-center gap-2 flex-grow-1 me-2">
+          <span style="width:12px;height:12px;border-radius:50%;background:{{ obj.color }};flex-shrink:0"></span>
+          <span class="fw-600" style="font-size:.975rem">{{ obj.titulo }}</span>
+        </div>
+        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+          <span class="sem-dot sem-{{ obj.semaforo }}" title="{{ obj.progreso }}% progreso"></span>
+          <span class="fw-700" style="font-size:.9rem;color:{% if obj.semaforo == 'verde' %}var(--success){% elif obj.semaforo == 'amarillo' %}var(--warning){% else %}var(--danger){% endif %}">
+            {{ obj.progreso }}%
+          </span>
+          <a href="{{ url_for('detalle_objetivo', id=obj.id) }}" class="btn btn-sm btn-outline-primary py-0">
+            <i class="bi bi-eye"></i>
+          </a>
+        </div>
+      </div>
+      <div class="card-body p-3">
+        {# Progreso general del objetivo #}
+        <div class="mb-3">
+          <div class="progress" style="height:8px;border-radius:99px">
+            <div class="progress-bar {% if obj.progreso >= 70 %}bg-success{% elif obj.progreso >= 40 %}bg-warning{% else %}bg-danger{% endif %}"
+                 style="width:{{ obj.progreso }}%;border-radius:99px;transition:width .6s"></div>
+          </div>
+          {% if obj.responsable_nombre %}
+          <small class="text-muted mt-1 d-block"><i class="bi bi-person me-1"></i>{{ obj.responsable_nombre }}</small>
+          {% endif %}
+        </div>
+
+        {# Key Results #}
+        {% if obj.key_results %}
+        <div class="d-flex flex-column gap-2">
+          {% for kr in obj.key_results %}
+          <div class="rounded p-2" style="background:var(--surface-secondary)">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span style="font-size:.8rem;font-weight:500;color:var(--text)">{{ kr.descripcion[:70] }}{% if kr.descripcion|length > 70 %}…{% endif %}</span>
+              <span class="badge-detail badge-{% if kr.semaforo == 'verde' %}success{% elif kr.semaforo == 'amarillo' %}warning{% else %}danger{% endif %}" style="font-size:.68rem;flex-shrink:0;margin-left:.5rem">
+                {{ kr.progreso }}%
+              </span>
+            </div>
+            <div class="progress" style="height:5px;border-radius:99px">
+              <div class="progress-bar {% if kr.semaforo == 'verde' %}bg-success{% elif kr.semaforo == 'amarillo' %}bg-warning{% else %}bg-danger{% endif %}"
+                   style="width:{{ kr.progreso }}%;border-radius:99px"></div>
+            </div>
+            {% if kr.entregables %}
+            <div class="mt-1" style="font-size:.7rem;color:var(--text-muted)">
+              <i class="bi bi-link-45deg me-1"></i>{{ kr.entregables|length }} entregable{{ 's' if kr.entregables|length != 1 }}
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted mb-0" style="font-size:.82rem"><i class="bi bi-info-circle me-1"></i>Sin Key Results. <a href="{{ url_for('detalle_objetivo', id=obj.id) }}">Agregar</a>.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{# ── Panel de ciclos ──────────────────────────────────────────────── #}
+{% if ciclos|length > 1 %}
+<div class="card mt-5">
+  <div class="card-header-custom"><i class="bi bi-calendar3 me-2 text-primary"></i>Todos los ciclos</div>
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0" style="font-size:.875rem">
+      <thead style="background:var(--surface-secondary)">
+        <tr>
+          <th class="ps-3">Ciclo</th><th>Inicio</th><th>Fin</th><th>Estado</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in ciclos %}
+        <tr>
+          <td class="ps-3 fw-600">{{ c.nombre }}</td>
+          <td class="text-muted">{{ c.fecha_inicio }}</td>
+          <td class="text-muted">{{ c.fecha_fin }}</td>
+          <td>
+            {% if c.activo %}
+              <span class="badge bg-success">Activo</span>
+            {% else %}
+              <span class="badge bg-secondary">Inactivo</span>
+            {% endif %}
+          </td>
+          <td class="text-end pe-3">
+            {% if not c.activo %}
+            <form method="POST" action="{{ url_for('activar_ciclo', id=c.id) }}" class="d-inline">
+              <button class="btn btn-sm btn-outline-success py-0">Activar</button>
+            </form>
+            {% endif %}
+            <a href="{{ url_for('okr', ciclo=c.id) }}" class="btn btn-sm btn-outline-primary py-0 ms-1">Ver</a>
+            <form method="POST" action="{{ url_for('eliminar_ciclo', id=c.id) }}" class="d-inline ms-1"
+                  onsubmit="return confirm('¿Eliminar ciclo y todos sus objetivos?')">
+              <button class="btn btn-sm btn-outline-danger py-0"><i class="bi bi-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endif %}{# fin if ciclos #}
+
+
+{# ── Modal: Nuevo ciclo ───────────────────────────────────────────── #}
+<div class="modal fade" id="modalCiclo" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('crear_ciclo') }}">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-calendar-plus me-2 text-primary"></i>Nuevo ciclo OKR</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-600">Nombre <span class="text-danger">*</span></label>
+            <input type="text" name="nombre" class="form-control" placeholder="Q1 2026, Anual 2026…" required>
+          </div>
+          <div class="row g-3">
+            <div class="col-6">
+              <label class="form-label fw-600">Fecha inicio <span class="text-danger">*</span></label>
+              <input type="date" name="fecha_inicio" class="form-control" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-600">Fecha fin <span class="text-danger">*</span></label>
+              <input type="date" name="fecha_fin" class="form-control" required>
+            </div>
+          </div>
+          <div class="form-check mt-3">
+            <input class="form-check-input" type="checkbox" name="activo" id="cicloActivo" checked>
+            <label class="form-check-label" for="cicloActivo">Marcar como ciclo activo</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Crear ciclo</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: Nuevo objetivo ────────────────────────────────────────── #}
+{% if ciclo_activo %}
+<div class="modal fade" id="modalObjetivo" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('crear_objetivo') }}">
+        <input type="hidden" name="ciclo_id" value="{{ ciclo_activo.id }}">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-flag me-2 text-primary"></i>Nuevo objetivo</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-600">Título <span class="text-danger">*</span></label>
+            <input type="text" name="titulo" class="form-control"
+                   placeholder="Ej: Optimizar la gestión de pagos" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Descripción</label>
+            <textarea name="descripcion" class="form-control" rows="2"
+                      placeholder="¿Qué se busca lograr con este objetivo?"></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Responsable</label>
+            <select name="responsable_id" class="form-select">
+              <option value="">Sin asignar</option>
+              {% for r in responsables %}
+                <option value="{{ r.id }}">{{ r.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Color identificador</label>
+            <div class="d-flex gap-2 flex-wrap">
+              {% for color in okr_colors %}
+              <label class="d-flex align-items-center gap-1" style="cursor:pointer">
+                <input type="radio" name="color" value="{{ color }}"
+                       {% if loop.first %}checked{% endif %}
+                       class="visually-hidden okr-color-radio">
+                <span class="okr-color-chip" style="background:{{ color }};width:28px;height:28px;border-radius:50%;display:block;border:3px solid transparent;transition:border-color .15s"
+                      data-color="{{ color }}"></span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Crear objetivo</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Color picker visual
+  document.querySelectorAll('.okr-color-radio').forEach(radio => {
+    function update() {
+      document.querySelectorAll('.okr-color-chip').forEach(chip => {
+        chip.style.borderColor = 'transparent';
+        chip.style.transform = 'scale(1)';
+      });
+      const chip = radio.parentElement.querySelector('.okr-color-chip');
+      if (radio.checked) {
+        chip.style.borderColor = '#1e293b';
+        chip.style.transform = 'scale(1.2)';
+      }
+    }
+    radio.addEventListener('change', update);
+    if (radio.checked) update();
+  });
+</script>
+{% endblock %}

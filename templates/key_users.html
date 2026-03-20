@@ -1,0 +1,6 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3"><div><h2 class="fw-bold">Key Users</h2><p class="text-muted">Puntos de contacto funcionales.</p></div></div>
+<form method="POST" class="row g-2 mb-3"><div class="col-md-8"><input name="nombre" class="form-control" placeholder="Nombre de key user" required></div><div class="col-md-4"><button class="btn btn-primary w-100">Agregar</button></div></form>
+<div class="card p-3"><ul class="list-group">{% for k in key_users %}<li class="list-group-item">{{ k.nombre }}</li>{% endfor %}</ul></div>
+{% endblock %}

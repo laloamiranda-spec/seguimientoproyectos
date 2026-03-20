@@ -1,0 +1,168 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+  <div>
+    <h2 class="fw-bold mb-0"><i class="bi bi-headset me-2 text-primary"></i>Soporte recurrente</h2>
+    <p class="text-muted mb-0">Base de conocimiento — temas, causas y soluciones frecuentes</p>
+  </div>
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalNuevoTema">
+    <i class="bi bi-plus-lg me-1"></i>Nuevo tema
+  </button>
+</div>
+
+{# ── Filtros ──────────────────────────────────────────────────────── #}
+<form method="GET" action="{{ url_for('soporte') }}" class="card mb-4 p-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-5">
+      <div class="input-group input-group-sm">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="text" name="q" class="form-control" placeholder="Buscar tema…"
+               value="{{ busqueda }}">
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <select name="tipo" class="form-select form-select-sm">
+        <option value="">Todos los tipos</option>
+        {% for t in tipos %}
+        <option value="{{ t }}" {% if t == tipo_sel %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-3">
+      <select name="division" class="form-select form-select-sm">
+        <option value="">Todas las divisiones</option>
+        {% for d in divisiones %}
+        <option value="{{ d.id }}" {% if d.id == division_sel %}selected{% endif %}>{{ d.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-1 d-flex gap-1">
+      <button type="submit" class="btn btn-primary btn-sm flex-grow-1">
+        <i class="bi bi-funnel"></i>
+      </button>
+      {% if busqueda or tipo_sel or division_sel %}
+      <a href="{{ url_for('soporte') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-x"></i>
+      </a>
+      {% endif %}
+    </div>
+  </div>
+</form>
+
+{# ── Lista de temas ───────────────────────────────────────────────── #}
+{% if not temas %}
+<div class="empty-state" style="padding:4rem">
+  <i class="bi bi-headset" style="font-size:3rem;opacity:.2;color:var(--primary)"></i>
+  <p class="mt-3 mb-1 fw-600">Sin temas registrados</p>
+  <p class="text-muted mb-3">Registra los problemas recurrentes de soporte para construir tu base de conocimiento.</p>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNuevoTema">
+    <i class="bi bi-plus-lg me-1"></i>Crear primer tema
+  </button>
+</div>
+{% else %}
+<div class="row g-3">
+  {% for t in temas %}
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="card h-100">
+      <div class="card-body p-3">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <div class="d-flex gap-2 align-items-center flex-wrap">
+            <span class="badge-detail badge-{% if t.tipo == 'SQL' %}warning{% elif t.tipo == 'Sistema' %}primary{% elif t.tipo == 'Integración' %}info{% elif t.tipo == 'Proceso' %}success{% else %}secondary{% endif %}">
+              <i class="bi bi-{% if t.tipo == 'SQL' %}database{% elif t.tipo == 'Sistema' %}display{% elif t.tipo == 'Integración' %}arrow-left-right{% elif t.tipo == 'Proceso' %}diagram-3{% else %}tag{% endif %} me-1"></i>
+              {{ t.tipo }}
+            </span>
+            {% if t.division_nombre %}
+            <span class="badge-detail badge-secondary" style="font-size:.7rem">{{ t.division_nombre }}</span>
+            {% endif %}
+          </div>
+          <span class="badge bg-secondary" style="font-size:.7rem">
+            {{ t.total_causas }} causa{{ 's' if t.total_causas != 1 }}
+          </span>
+        </div>
+        <h6 class="fw-700 mb-1">{{ t.titulo }}</h6>
+        {% if t.descripcion %}
+        <p class="text-muted mb-2" style="font-size:.82rem">
+          {{ t.descripcion[:120] }}{% if t.descripcion|length > 120 %}…{% endif %}
+        </p>
+        {% endif %}
+        {% if t.url_proyecto %}
+        <a href="{{ t.url_proyecto }}" target="_blank" class="text-decoration-none"
+           style="font-size:.78rem;color:var(--primary)">
+          <i class="bi bi-box-arrow-up-right me-1"></i>Ver proyecto
+        </a>
+        {% endif %}
+      </div>
+      <div class="card-footer bg-transparent border-top p-2 d-flex justify-content-between align-items-center">
+        <small class="text-muted">{{ t.creado_en.strftime('%d/%m/%Y') if t.creado_en else '' }}</small>
+        <div class="d-flex gap-1">
+          <a href="{{ url_for('detalle_soporte', id=t.id) }}" class="btn btn-sm btn-outline-primary py-0">
+            <i class="bi bi-eye me-1"></i>Ver detalle
+          </a>
+          <form method="POST" action="{{ url_for('eliminar_tema_soporte', id=t.id) }}" class="d-inline"
+                onsubmit="return confirm('¿Eliminar el tema y todas sus causas?')">
+            <button class="btn btn-sm btn-outline-danger py-0"><i class="bi bi-trash"></i></button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ── Modal nuevo tema ─────────────────────────────────────────────── #}
+<div class="modal fade" id="modalNuevoTema" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('crear_tema_soporte') }}">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-headset me-2 text-primary"></i>Nuevo tema recurrente</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-600">Título <span class="text-danger">*</span></label>
+            <input type="text" name="titulo" class="form-control" required
+                   placeholder="Ej: Error al generar UUID en pagos">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Descripción</label>
+            <textarea name="descripcion" class="form-control" rows="2"
+                      placeholder="¿En qué consiste el problema recurrente?"></textarea>
+          </div>
+          <div class="row g-3">
+            <div class="col-6">
+              <label class="form-label fw-600">Tipo</label>
+              <select name="tipo" class="form-select">
+                {% for t in tipos %}
+                <option value="{{ t }}">{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-600">División</label>
+              <select name="division_id" class="form-select">
+                <option value="">Sin división</option>
+                {% for d in divisiones %}
+                <option value="{{ d.id }}">{{ d.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="mt-3">
+            <label class="form-label fw-600">URL del proyecto</label>
+            <input type="url" name="url_proyecto" class="form-control"
+                   placeholder="https://github.com/… o SharePoint…">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Crear tema</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

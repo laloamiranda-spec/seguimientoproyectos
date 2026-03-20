@@ -1,0 +1,355 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+  <div>
+    <h2 class="fw-bold mb-0">Dashboard</h2>
+    <p class="text-muted mb-0">
+      Resumen ejecutivo — {{ now.strftime('%d de %B, %Y') if now else '' }}
+      {% if division_seleccionada %}
+        <span class="badge bg-primary ms-2" style="font-size:.75rem;font-weight:500">
+          <i class="bi bi-funnel-fill me-1"></i>{{ division_seleccionada }}
+        </span>
+      {% endif %}
+    </p>
+  </div>
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <form method="GET" action="{{ url_for('dashboard') }}" class="d-flex gap-2 align-items-center">
+      <select name="division" class="form-select form-select-sm" style="max-width:180px" onchange="this.form.submit()">
+        <option value="">Todas las divisiones</option>
+        {% for d in divisiones %}
+          <option value="{{ d.nombre }}" {% if d.nombre == division_seleccionada %}selected{% endif %}>{{ d.nombre }}</option>
+        {% endfor %}
+      </select>
+      {% if division_seleccionada %}
+        <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary" title="Quitar filtro">
+          <i class="bi bi-x-lg"></i>
+        </a>
+      {% endif %}
+    </form>
+    {# Botones de exportación #}
+    <div class="btn-group" role="group">
+      <a class="btn btn-sm btn-outline-success"
+         href="{{ url_for('dashboard_export', fmt='excel') }}{% if division_seleccionada %}?division={{ division_seleccionada | urlencode }}{% endif %}"
+         title="Descargar Excel">
+        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Excel
+      </a>
+      <a class="btn btn-sm btn-outline-danger"
+         href="{{ url_for('dashboard_export', fmt='pdf') }}{% if division_seleccionada %}?division={{ division_seleccionada | urlencode }}{% endif %}"
+         title="Descargar PDF">
+        <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+      </a>
+      <a class="btn btn-sm btn-outline-warning"
+         href="{{ url_for('dashboard_export', fmt='pptx') }}{% if division_seleccionada %}?division={{ division_seleccionada | urlencode }}{% endif %}"
+         title="Descargar PowerPoint">
+        <i class="bi bi-file-earmark-ppt me-1"></i>PPTX
+      </a>
+    </div>
+    <a class="btn btn-primary btn-sm" href="{{ url_for('nuevo_entregable') }}">
+      <i class="bi bi-plus-lg me-1"></i>Nuevo entregable
+    </a>
+  </div>
+</div>
+
+{# ── KPI Row 1: Actividad ────────────────────────────────────────────── #}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card card-stat card-primary">
+      <div>
+        <small class="text-muted">Total entregables</small>
+        <h3 class="mt-1">{{ total_entregables }}</h3>
+        <p class="mb-0 text-muted" style="font-size:.78rem">registrados</p>
+      </div>
+      <div class="stat-icon" style="background:var(--primary-soft);color:var(--primary)"><i class="bi bi-collection"></i></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card card-stat card-primary">
+      <div>
+        <small class="text-muted">Vencen hoy</small>
+        <h3 class="mt-1">{{ pendientes_hoy|length }}</h3>
+        <p class="mb-0 text-muted" style="font-size:.78rem">prioridad máxima</p>
+      </div>
+      <div class="stat-icon" style="background:var(--primary-soft);color:var(--primary)"><i class="bi bi-alarm"></i></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card card-stat card-success">
+      <div>
+        <small class="text-muted">Próximos 7 días</small>
+        <h3 class="mt-1">{{ proximos|length }}</h3>
+        <p class="mb-0 text-muted" style="font-size:.78rem">plazos cercanos</p>
+      </div>
+      <div class="stat-icon" style="background:var(--success-soft);color:var(--success)"><i class="bi bi-calendar-week"></i></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card card-stat {% if sem_rojo > 0 %}card-danger{% else %}card-success{% endif %}">
+      <div>
+        <small class="text-muted">Semáforo rojo</small>
+        <h3 class="mt-1" style="color:{{ 'var(--danger)' if sem_rojo > 0 else 'var(--success)' }}">{{ sem_rojo }}</h3>
+        <p class="mb-0 text-muted" style="font-size:.78rem">requieren acción</p>
+      </div>
+      <div class="stat-icon" style="background:{{ 'var(--danger-soft)' if sem_rojo > 0 else 'var(--success-soft)' }};color:{{ 'var(--danger)' if sem_rojo > 0 else 'var(--success)' }}"><i class="bi bi-circle-fill"></i></div>
+    </div>
+  </div>
+</div>
+
+{# ── KPI Row 2: FRD ──────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card card-stat card-warning">
+      <div>
+        <small class="text-muted">FRD sin URL</small>
+        <h3 class="mt-1" style="color:var(--warning)">{{ pendientes_frd or 0 }}</h3>
+        <p class="mb-0 text-muted" style="font-size:.78rem">pendiente de documento</p>
+      </div>
+      <div class="stat-icon" style="background:var(--warning-soft);color:var(--warning)"><i class="bi bi-file-earmark-x"></i></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card card-stat card-info">
+      <div>
+        <small class="text-muted">Pendientes de firma</small>
+        <h3 class="mt-1" style="color:var(--info)">{{ pendientes_firma or 0 }}</h3>
+        <p class="mb-0 text-muted" style="font-size:.78rem">FRD sin firmar</p>
+      </div>
+      <div class="stat-icon" style="background:var(--info-soft);color:var(--info)"><i class="bi bi-pen"></i></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card card-stat card-danger">
+      <div>
+        <small class="text-muted">Pendientes aceptación</small>
+        <h3 class="mt-1" style="color:var(--danger)">{{ pendientes_aceptacion or 0 }}</h3>
+        <p class="mb-0 text-muted" style="font-size:.78rem">desarrollo listo sin aceptar</p>
+      </div>
+      <div class="stat-icon" style="background:var(--danger-soft);color:var(--danger)"><i class="bi bi-clipboard-x"></i></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card card-stat card-success">
+      <div>
+        <small class="text-muted">FRDs completados</small>
+        <h3 class="mt-1" style="color:var(--success)">{{ frd_pct }}%</h3>
+        <p class="mb-0 text-muted" style="font-size:.78rem">de {{ total_frd }} con FRD</p>
+      </div>
+      <div class="stat-icon" style="background:var(--success-soft);color:var(--success)"><i class="bi bi-file-earmark-check"></i></div>
+    </div>
+  </div>
+</div>
+
+<div class="row gy-4">
+  {# ── Calendario 10 días ───────────────────────────────────────────── #}
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header-custom">
+        <i class="bi bi-calendar3 me-2 text-primary"></i>Calendario — próximos 10 días
+        <span class="ms-auto text-muted" style="font-size:.78rem;font-weight:400">Hoy es el día central</span>
+      </div>
+      <div class="card-body p-3">
+        <div class="row g-2">
+          {% for dia in calendario %}
+            <div class="col-6 col-md-2">
+              <div class="day-card {{ 'today' if loop.index == 5 else '' }}">
+                <div class="day-label">{{ dia.label.split(' ')[0] }}</div>
+                <div class="day-num">{{ dia.fecha.strftime('%d') }}</div>
+                <div style="font-size:.7rem;color:var(--text-muted)">{{ dia.label.split(' ')[2] if dia.label.split(' ')|length > 2 else '' }}</div>
+                <div class="mt-1">
+                  {% if dia.entregables|length == 0 %}
+                    <div style="font-size:.68rem;color:var(--text-muted);opacity:.6">—</div>
+                  {% else %}
+                    {% for t in dia.entregables[:3] %}
+                      <div class="day-badge day-badge-{{ t.semaforo_cliente or 'default' }}" title="{{ t.nombre }}">
+                        {{ t.folio or 'N/A' }}
+                      </div>
+                    {% endfor %}
+                    {% if dia.entregables|length > 3 %}
+                      <div style="font-size:.68rem;color:var(--text-muted);margin-top:.2rem">+{{ dia.entregables|length - 3 }} más</div>
+                    {% endif %}
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    {# Gráfica divisiones #}
+    <div class="card mt-4">
+      <div class="card-header-custom">
+        <i class="bi bi-bar-chart-line me-2 text-primary"></i>Entregables por división
+      </div>
+      <div class="card-body"><canvas id="divisionesChart" style="width:100%;height:220px"></canvas></div>
+    </div>
+  </div>
+
+  {# ── Panel derecho ────────────────────────────────────────────────── #}
+  <div class="col-lg-4">
+
+    {# Semáforo resumen #}
+    <div class="card mb-4">
+      <div class="card-header-custom">
+        <i class="bi bi-traffic-light me-2 text-primary"></i>Semáforo global
+      </div>
+      <div class="card-body p-3">
+        <div class="d-flex flex-column gap-2">
+          <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background:var(--success-soft)">
+            <div class="d-flex align-items-center gap-2">
+              <span class="sem-dot sem-verde"></span>
+              <span style="font-size:.875rem;font-weight:500;color:var(--success)">Verde — A tiempo</span>
+            </div>
+            <span class="fw-700" style="color:var(--success)">{{ sem_verde }}</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background:var(--warning-soft)">
+            <div class="d-flex align-items-center gap-2">
+              <span class="sem-dot sem-amarillo"></span>
+              <span style="font-size:.875rem;font-weight:500;color:var(--warning)">Amarillo — En riesgo</span>
+            </div>
+            <span class="fw-700" style="color:var(--warning)">{{ sem_amarillo }}</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background:var(--danger-soft)">
+            <div class="d-flex align-items-center gap-2">
+              <span class="sem-dot sem-rojo"></span>
+              <span style="font-size:.875rem;font-weight:500;color:var(--danger)">Rojo — Atrasado</span>
+            </div>
+            <span class="fw-700" style="color:var(--danger)">{{ sem_rojo }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# Progreso FRD #}
+    <div class="card mb-4">
+      <div class="card-header-custom">
+        <i class="bi bi-file-earmark-check me-2 text-warning"></i>Resumen FRD
+        <span class="ms-auto fw-700" style="color:var(--success)">{{ frd_pct }}%</span>
+      </div>
+      <div class="card-body p-3">
+        <div class="mb-3">
+          <div class="d-flex justify-content-between mb-1" style="font-size:.78rem;color:var(--text-muted)">
+            <span>Avance de cierre FRD</span>
+            <span>{{ frd_pct }}% de {{ total_frd }}</span>
+          </div>
+          <div class="progress" style="height:10px;border-radius:99px">
+            <div class="progress-bar {% if frd_pct >= 80 %}bg-success{% elif frd_pct >= 40 %}bg-warning{% else %}bg-danger{% endif %}"
+                 style="width:{{ frd_pct }}%;border-radius:99px;transition:width .6s"></div>
+          </div>
+        </div>
+        <div class="d-flex flex-column gap-1" style="font-size:.82rem">
+          <div class="d-flex justify-content-between"><span class="text-muted"><i class="bi bi-file-earmark-x me-1 text-warning"></i>Sin URL</span><strong>{{ pendientes_frd }}</strong></div>
+          <div class="d-flex justify-content-between"><span class="text-muted"><i class="bi bi-pen me-1 text-info"></i>Sin firma</span><strong>{{ pendientes_firma }}</strong></div>
+          <div class="d-flex justify-content-between"><span class="text-muted"><i class="bi bi-clipboard-x me-1 text-danger"></i>Sin aceptación</span><strong>{{ pendientes_aceptacion }}</strong></div>
+        </div>
+      </div>
+    </div>
+
+    {# Vencidos #}
+    <div class="card mb-4">
+      <div class="card-header-custom">
+        <i class="bi bi-exclamation-octagon me-2 text-danger"></i>Vencidos
+        <span class="badge {% if vencidos_count > 0 %}bg-danger{% else %}bg-secondary{% endif %} ms-auto">{{ vencidos_count }}</span>
+      </div>
+      <div class="card-body p-0">
+        {% if vencidos_list %}
+          <ul class="list-group list-group-flush">
+          {% for v in vencidos_list %}
+            <li class="list-group-item list-item-card d-flex justify-content-between align-items-start">
+              <div class="flex-grow-1 me-2">
+                <div class="fw-600" style="font-size:.875rem">{{ v.nombre }}</div>
+                <small class="text-muted">{{ v.responsable or 'Sin asignar' }}</small>
+                <div class="mt-1">
+                  <span class="badge-detail badge-danger" style="font-size:.7rem">
+                    <i class="bi bi-calendar-x me-1"></i>{{ v.fecha_entrega }}
+                  </span>
+                  <span class="badge-detail badge-secondary" style="font-size:.7rem">{{ v.porcentaje_avance or 0 }}%</span>
+                </div>
+              </div>
+              <a href="{{ url_for('detalle_entregable', id=v.id) }}" class="btn btn-sm btn-outline-danger flex-shrink-0">
+                <i class="bi bi-eye"></i>
+              </a>
+            </li>
+          {% endfor %}
+          </ul>
+        {% else %}
+          <div class="empty-state" style="padding:2rem">
+            <i class="bi bi-check-circle-fill" style="font-size:2rem;opacity:.25;color:var(--success)"></i>
+            <p class="mt-2 mb-0">Sin entregables vencidos.</p>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Entregables hoy #}
+    <div class="card">
+      <div class="card-header-custom">
+        <i class="bi bi-alarm me-2 text-danger"></i>Vencen hoy
+        {% if pendientes_hoy %}<span class="badge bg-danger ms-auto">{{ pendientes_hoy|length }}</span>{% endif %}
+      </div>
+      <div class="card-body p-0">
+        {% if pendientes_hoy %}
+          <ul class="list-group list-group-flush">
+          {% for p in pendientes_hoy %}
+            <li class="list-group-item list-item-card d-flex justify-content-between align-items-start">
+              <div class="flex-grow-1 me-2">
+                <div class="fw-600" style="font-size:.875rem">{{ p.nombre }}</div>
+                <small class="text-muted">{{ p.responsable or 'Sin asignar' }}</small>
+                <div class="mt-1 d-flex flex-wrap gap-1">
+                  {% if p.frd_aplica %}<span class="badge-detail badge-primary" style="font-size:.7rem">FRD</span>{% endif %}
+                  {% if p.frd_url %}<span class="badge-detail badge-success" style="font-size:.7rem">URL ✓</span>{% endif %}
+                  {% if p.frd_firmado %}<span class="badge-detail badge-info" style="font-size:.7rem">Firmado</span>{% endif %}
+                  {% if p.frd_aceptacion %}<span class="badge-detail badge-success" style="font-size:.7rem">Aceptado</span>{% endif %}
+                </div>
+              </div>
+              <div class="text-end flex-shrink-0">
+                <span class="sem-dot sem-{{ p.semaforo_cliente }}"></span>
+                <a href="{{ url_for('detalle_entregable', id=p.id) }}" class="btn btn-sm btn-outline-primary mt-1">
+                  <i class="bi bi-eye"></i>
+                </a>
+              </div>
+            </li>
+          {% endfor %}
+          </ul>
+        {% else %}
+          <div class="empty-state" style="padding:2rem">
+            <i class="bi bi-check-circle-fill" style="font-size:2rem;opacity:.25;color:var(--success)"></i>
+            <p class="mt-2 mb-0">¡Sin vencimientos hoy!</p>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  const ctx = document.getElementById('divisionesChart');
+  if (ctx) {
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: {{ division_labels|tojson }},
+        datasets: [{
+          label: 'Entregables',
+          data: {{ division_values|tojson }},
+          backgroundColor: ['#4f46e5','#0284c7','#16a34a','#d97706','#dc2626','#7c3aed'],
+          borderRadius: 8,
+          borderSkipped: false,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, ticks: { precision: 0, font: { size: 11 } }, grid: { color: '#f1f5f9' } },
+          x: { ticks: { font: { size: 11 } }, grid: { display: false } }
+        }
+      }
+    });
+  }
+</script>
+{% endblock %}

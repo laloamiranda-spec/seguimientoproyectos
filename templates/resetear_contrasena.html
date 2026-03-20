@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nueva contraseña — Entregables+</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --primary: #4F46E5; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #EEF2FF 0%, #F8FAFC 60%, #E0F2FE 100%);
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    }
+    .card {
+      width: 100%; max-width: 420px; border-radius: 16px;
+      box-shadow: 0 8px 40px rgba(79,70,229,.12); border: none; padding: 2.5rem 2rem;
+    }
+    .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,.15); }
+    .btn-primary { background: var(--primary); border-color: var(--primary); font-weight: 600; }
+    .toggle-pass { cursor: pointer; color: #9CA3AF; }
+    .strength-bar { height: 4px; border-radius: 99px; transition: width .3s, background .3s; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="text-center mb-4">
+    <div style="width:56px;height:56px;border-radius:50%;background:#EEF2FF;
+                display:flex;align-items:center;justify-content:center;margin:0 auto 1rem">
+      <i class="bi bi-shield-lock" style="font-size:1.6rem;color:var(--primary)"></i>
+    </div>
+    <h5 class="fw-bold mb-1">Nueva contraseña</h5>
+    <p class="text-muted mb-0" style="font-size:.88rem">Elige una contraseña segura de al menos 8 caracteres.</p>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ 'danger' if category == 'error' else category }} py-2" style="font-size:.85rem">
+      {{ message }}
+    </div>
+    {% endfor %}
+  {% endwith %}
+
+  <form method="POST" action="{{ url_for('resetear_contrasena', token=token) }}">
+    <div class="mb-3">
+      <label class="form-label fw-600 mb-1">Nueva contraseña</label>
+      <div class="input-group">
+        <input type="password" name="password" id="pass" class="form-control"
+               placeholder="Mínimo 8 caracteres" required minlength="8"
+               oninput="checkStrength(this.value)" autofocus>
+        <span class="input-group-text toggle-pass" onclick="togglePass('pass',this)">
+          <i class="bi bi-eye"></i>
+        </span>
+      </div>
+      <div class="mt-1" style="background:#E5E7EB;border-radius:99px;height:4px">
+        <div id="strength-bar" class="strength-bar" style="width:0%"></div>
+      </div>
+      <small id="strength-label" class="text-muted"></small>
+    </div>
+    <div class="mb-4">
+      <label class="form-label fw-600 mb-1">Confirmar contraseña</label>
+      <div class="input-group">
+        <input type="password" name="confirm" id="pass2" class="form-control"
+               placeholder="Repite la contraseña" required minlength="8">
+        <span class="input-group-text toggle-pass" onclick="togglePass('pass2',this)">
+          <i class="bi bi-eye"></i>
+        </span>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary w-100 py-2 mb-3">
+      <i class="bi bi-check-lg me-1"></i>Guardar nueva contraseña
+    </button>
+    <div class="text-center">
+      <a href="{{ url_for('login') }}" class="text-decoration-none"
+         style="font-size:.85rem;color:var(--primary)">
+        <i class="bi bi-arrow-left me-1"></i>Volver al inicio de sesión
+      </a>
+    </div>
+  </form>
+</div>
+
+<script>
+  function togglePass(id, el) {
+    const inp = document.getElementById(id);
+    const icon = el.querySelector('i');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+    icon.className = inp.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+  }
+
+  function checkStrength(val) {
+    const bar = document.getElementById('strength-bar');
+    const lbl = document.getElementById('strength-label');
+    let score = 0;
+    if (val.length >= 8)  score++;
+    if (val.length >= 12) score++;
+    if (/[A-Z]/.test(val)) score++;
+    if (/[0-9]/.test(val)) score++;
+    if (/[^A-Za-z0-9]/.test(val)) score++;
+    const levels = [
+      { pct: '20%', bg: '#DC2626', txt: 'Muy débil' },
+      { pct: '40%', bg: '#D97706', txt: 'Débil' },
+      { pct: '60%', bg: '#F59E0B', txt: 'Regular' },
+      { pct: '80%', bg: '#16A34A', txt: 'Fuerte' },
+      { pct: '100%', bg: '#15803D', txt: 'Muy fuerte' },
+    ];
+    const l = levels[Math.min(score - 1, 4)] || levels[0];
+    bar.style.width = val.length ? l.pct : '0%';
+    bar.style.background = l.bg;
+    lbl.textContent = val.length ? l.txt : '';
+    lbl.style.color = l.bg;
+  }
+</script>
+</body>
+</html>

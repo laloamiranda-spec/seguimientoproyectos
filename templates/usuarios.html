@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h2 class="fw-bold mb-0"><i class="bi bi-people me-2 text-primary"></i>Usuarios</h2>
+    <p class="text-muted mb-0">Gestión de acceso al sistema</p>
+  </div>
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalNuevoUsuario">
+    <i class="bi bi-person-plus me-1"></i>Nuevo usuario
+  </button>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0" style="font-size:.875rem">
+      <thead style="background:var(--surface-secondary)">
+        <tr>
+          <th class="ps-3">Usuario</th>
+          <th>Rol</th>
+          <th>Estado</th>
+          <th>Último acceso</th>
+          <th>Creado</th>
+          <th class="pe-3"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in usuarios %}
+        <tr>
+          <td class="ps-3">
+            <div class="d-flex align-items-center gap-2">
+              <span style="width:34px;height:34px;border-radius:50%;flex-shrink:0;
+                           background:{% if u.rol == 'admin' %}var(--primary-soft){% else %}#F1F5F9{% endif %};
+                           color:{% if u.rol == 'admin' %}var(--primary){% else %}var(--text-muted){% endif %};
+                           display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem">
+                {{ u.nombre[:2].upper() }}
+              </span>
+              <div>
+                <div class="fw-600">{{ u.nombre }}</div>
+                <div class="text-muted" style="font-size:.78rem">{{ u.email }}</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            {% if u.rol == 'admin' %}
+            <span class="badge-detail badge-primary">
+              <i class="bi bi-shield-check me-1"></i>Admin
+            </span>
+            {% else %}
+            <span class="badge-detail badge-secondary">
+              <i class="bi bi-person me-1"></i>Usuario
+            </span>
+            {% endif %}
+          </td>
+          <td>
+            {% if u.activo %}
+            <span class="badge bg-success">Activo</span>
+            {% else %}
+            <span class="badge bg-secondary">Inactivo</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">
+            {% if u.ultimo_acceso %}
+              {{ u.ultimo_acceso.strftime('%d/%m/%Y %H:%M') if u.ultimo_acceso else '—' }}
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-muted">
+            {{ u.creado_en.strftime('%d/%m/%Y') if u.creado_en else '—' }}
+          </td>
+          <td class="pe-3 text-end">
+            <div class="d-flex justify-content-end gap-1">
+              {# Reset password #}
+              <button class="btn btn-sm btn-outline-warning py-0"
+                      data-bs-toggle="modal"
+                      data-bs-target="#modalResetPass{{ u.id }}"
+                      title="Restablecer contraseña">
+                <i class="bi bi-key"></i>
+              </button>
+              {# Toggle activo #}
+              {% if u.id | string != current_user.id %}
+              <form method="POST" action="{{ url_for('toggle_usuario', id=u.id) }}" class="d-inline">
+                <button class="btn btn-sm {% if u.activo %}btn-outline-secondary{% else %}btn-outline-success{% endif %} py-0"
+                        title="{{ 'Desactivar' if u.activo else 'Activar' }}">
+                  <i class="bi {% if u.activo %}bi-pause-circle{% else %}bi-play-circle{% endif %}"></i>
+                </button>
+              </form>
+              {# Eliminar #}
+              <form method="POST" action="{{ url_for('eliminar_usuario', id=u.id) }}" class="d-inline"
+                    onsubmit="return confirm('¿Eliminar usuario {{ u.nombre }}?')">
+                <button class="btn btn-sm btn-outline-danger py-0" title="Eliminar">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+
+        {# Modal reset password para este usuario #}
+        <div class="modal fade" id="modalResetPass{{ u.id }}" tabindex="-1">
+          <div class="modal-dialog modal-sm">
+            <div class="modal-content">
+              <form method="POST" action="{{ url_for('admin_reset_password', id=u.id) }}">
+                <div class="modal-header">
+                  <h6 class="modal-title fw-bold">
+                    <i class="bi bi-key me-1 text-warning"></i>Restablecer contraseña
+                  </h6>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                  <p class="text-muted mb-2" style="font-size:.85rem">
+                    Nueva contraseña para <strong>{{ u.nombre }}</strong>
+                  </p>
+                  <input type="password" name="password" class="form-control form-control-sm"
+                         placeholder="Mínimo 8 caracteres" required minlength="8">
+                </div>
+                <div class="modal-footer py-2">
+                  <button type="button" class="btn btn-sm btn-outline-secondary"
+                          data-bs-dismiss="modal">Cancelar</button>
+                  <button type="submit" class="btn btn-sm btn-warning">
+                    <i class="bi bi-check-lg me-1"></i>Restablecer
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── Modal nuevo usuario ──────────────────────────────────────────── #}
+<div class="modal fade" id="modalNuevoUsuario" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('crear_usuario') }}">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-person-plus me-2 text-primary"></i>Nuevo usuario</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-600">Nombre completo <span class="text-danger">*</span></label>
+            <input type="text" name="nombre" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Correo electrónico <span class="text-danger">*</span></label>
+            <input type="email" name="email" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Rol</label>
+            <select name="rol" class="form-select">
+              <option value="usuario">Usuario</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+          <div class="mb-1">
+            <label class="form-label fw-600">Contraseña inicial <span class="text-danger">*</span></label>
+            <input type="password" name="password" class="form-control"
+                   placeholder="Mínimo 8 caracteres" required minlength="8">
+            <div class="form-text">El usuario podrá cambiarla desde su perfil.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-lg me-1"></i>Crear usuario
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

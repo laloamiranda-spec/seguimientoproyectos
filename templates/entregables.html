@@ -1,0 +1,408 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <h2 class="fw-bold mb-0">Entregables</h2>
+    <p class="text-muted mb-0">Gestión y seguimiento de todos los entregables.</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    {# ── Descargar layout ── #}
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('descargar_layout') }}"
+       title="Descargar template Excel para carga masiva">
+      <i class="bi bi-download me-1"></i>Descargar layout
+    </a>
+    {# ── Cargar layout ── #}
+    <button class="btn btn-outline-success btn-sm"
+            data-bs-toggle="modal" data-bs-target="#modalCargarLayout"
+            title="Importar entregables desde Excel">
+      <i class="bi bi-upload me-1"></i>Cargar layout
+    </button>
+    <a class="btn btn-primary" href="{{ url_for('nuevo_entregable') }}">
+      <i class="bi bi-plus-lg me-1"></i>Nuevo entregable
+    </a>
+  </div>
+</div>
+
+{# ── Modal: Cargar Layout Excel ───────────────────────────────────────── #}
+<div class="modal fade" id="modalCargarLayout" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('cargar_layout') }}" enctype="multipart/form-data">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-file-earmark-excel me-2 text-success"></i>Importar desde Excel
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted mb-3" style="font-size:.875rem">
+            Sube el layout Excel con los entregables a importar. Usa el botón
+            <strong>"Descargar layout"</strong> para obtener la plantilla con el formato correcto.
+          </p>
+          <div class="mb-3">
+            <label class="form-label fw-600">Archivo Excel <span class="text-danger">*</span></label>
+            <input type="file" name="archivo_layout" class="form-control" accept=".xlsx" required>
+            <div class="form-text">Solo archivos <code>.xlsx</code>. Tamaño máximo: 5 MB.</div>
+          </div>
+          <div class="alert alert-info py-2 px-3 mb-0" style="font-size:.8rem">
+            <i class="bi bi-info-circle me-1"></i>
+            Los nombres de <strong>Responsable</strong>, <strong>División</strong> y <strong>Key User</strong>
+            deben coincidir exactamente con los del catálogo. Las filas con errores se omiten y se muestra un reporte.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-success">
+            <i class="bi bi-cloud-upload me-1"></i>Importar entregables
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# ── Resumen rápido ───────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card card-stat card-primary">
+      <div>
+        <small class="text-muted">Total</small>
+        <h3 id="countTotal" class="mt-1">{{ entregables|length }}</h3>
+        <p class="mb-0 text-muted" style="font-size:.8rem">entregables</p>
+      </div>
+      <div class="stat-icon" style="background:var(--primary-soft);color:var(--primary)"><i class="bi bi-collection"></i></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card card-stat card-danger">
+      <div>
+        <small class="text-muted">En riesgo / Atrasados</small>
+        <h3 class="mt-1" style="color:var(--danger)">{{ entregables|selectattr('va_a_tiempo','in',['En riesgo','Atrasado'])|list|length }}</h3>
+        <p class="mb-0 text-muted" style="font-size:.8rem">requieren atención</p>
+      </div>
+      <div class="stat-icon" style="background:var(--danger-soft);color:var(--danger)"><i class="bi bi-exclamation-triangle"></i></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card card-stat card-success">
+      <div>
+        <small class="text-muted">A tiempo</small>
+        <h3 class="mt-1" style="color:var(--success)">{{ entregables|selectattr('va_a_tiempo','equalto','A tiempo')|list|length }}</h3>
+        <p class="mb-0 text-muted" style="font-size:.8rem">en progreso</p>
+      </div>
+      <div class="stat-icon" style="background:var(--success-soft);color:var(--success)"><i class="bi bi-check-circle"></i></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card card-stat card-warning">
+      <div>
+        <small class="text-muted">Necesitan DevOps</small>
+        <h3 class="mt-1" style="color:var(--warning)">{{ entregables|selectattr('necesita_devops')|list|length }}</h3>
+        <p class="mb-0 text-muted" style="font-size:.8rem">pendientes</p>
+      </div>
+      <div class="stat-icon" style="background:var(--warning-soft);color:var(--warning)"><i class="bi bi-gear"></i></div>
+    </div>
+  </div>
+</div>
+
+{# ── Tabla con filtros ────────────────────────────────────────────────── #}
+<div class="card p-0">
+  <div class="filter-bar">
+    <div class="position-relative search-box">
+      <i class="bi bi-search position-absolute" style="left:.75rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:.85rem"></i>
+      <input id="searchInput" type="text" class="form-control ps-4" placeholder="Buscar por folio, nombre o responsable…">
+    </div>
+    <select id="filterEstatus" class="form-select" style="max-width:160px">
+      <option value="">Todos los estatus</option>
+      <option>Borrador</option>
+      <option>En progreso</option>
+      <option>En revisión</option>
+      <option>Completado</option>
+      <option>Cancelado</option>
+    </select>
+    <select id="filterSemaforo" class="form-select" style="max-width:160px">
+      <option value="">Semáforo</option>
+      <option value="verde">Verde</option>
+      <option value="amarillo">Amarillo</option>
+      <option value="rojo">Rojo</option>
+    </select>
+    <select id="filterDivision" class="form-select" style="max-width:160px">
+      <option value="">Todas las divisiones</option>
+      {% for d in divisiones %}
+        <option>{{ d.nombre }}</option>
+      {% endfor %}
+    </select>
+    <select id="filterProyecto" class="form-select" style="max-width:180px">
+      <option value="">Todos los proyectos</option>
+      {% for p in proyectos %}
+        <option value="{{ p.nombre }}">{{ p.nombre }}</option>
+      {% endfor %}
+    </select>
+    <select id="filterDevops" class="form-select" style="max-width:140px">
+      <option value="">DevOps: todos</option>
+      <option value="1">Requiere DevOps</option>
+      <option value="0">Sin DevOps</option>
+    </select>
+    <button id="clearFilters" class="btn btn-outline-secondary btn-sm" title="Limpiar filtros">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table mb-0" id="entregablesTable">
+      <thead>
+        <tr>
+          <th data-col="folio" class="sortable">Folio <i class="bi bi-chevron-expand sort-icon"></i></th>
+          <th data-col="nombre" class="sortable">Nombre <i class="bi bi-chevron-expand sort-icon"></i></th>
+          <th data-col="fecha_entrega" class="sortable">Entrega <i class="bi bi-chevron-expand sort-icon"></i></th>
+          <th>Avance</th>
+          <th>Estatus</th>
+          <th>Semáforo</th>
+          <th>Responsable</th>
+          <th>Proyecto</th>
+          <th>División</th>
+          <th>DevOps</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        {% for e in entregables %}
+        <tr data-folio="{{ e.folio or '' }}"
+            data-nombre="{{ e.nombre }}"
+            data-responsable="{{ e.responsable or '' }}"
+            data-estatus="{{ e.estatus or 'Borrador' }}"
+            data-semaforo="{{ e.semaforo_cliente }}"
+            data-division="{{ e.division or '' }}"
+            data-proyecto="{{ e.proyecto or '' }}"
+            data-devops="{{ '1' if e.necesita_devops else '0' }}"
+            data-fecha="{{ e.fecha_entrega or '' }}">
+          <td><span class="fw-600 text-primary-custom">{{ e.folio or '—' }}</span></td>
+          <td>
+            <div class="fw-500">{{ e.nombre }}</div>
+            {% if e.descripcion %}<div class="text-muted" style="font-size:.78rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ e.descripcion }}</div>{% endif %}
+          </td>
+          <td>
+            <span class="{% if e.va_a_tiempo == 'Atrasado' %}text-danger fw-600{% elif e.va_a_tiempo == 'En riesgo' %}text-warning fw-500{% endif %}">
+              {{ e.fecha_entrega or '—' }}
+            </span>
+          </td>
+          <td class="progress-cell">
+            <div class="prog-bar-wrap">
+              <span style="font-size:.8rem;min-width:32px">{{ e.porcentaje_avance or 0 }}%</span>
+              <div class="progress">
+                <div class="progress-bar {% if (e.porcentaje_avance or 0) >= 80 %}bg-success{% elif (e.porcentaje_avance or 0) >= 40 %}bg-warning{% else %}bg-danger{% endif %}"
+                     style="width:{{ e.porcentaje_avance or 0 }}%"></div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <span class="badge-status
+              {% if e.estatus == 'Completado' %}badge-success
+              {% elif e.estatus == 'Cancelado' %}badge-danger
+              {% elif e.estatus == 'En revisión' %}badge-info
+              {% elif e.estatus == 'En progreso' %}badge-primary
+              {% else %}badge-secondary{% endif %}">
+              {{ e.estatus or 'Borrador' }}
+            </span>
+          </td>
+          <td>
+            <span class="sem-dot sem-{{ e.semaforo_cliente }}"></span>
+            <span style="font-size:.82rem">{{ e.semaforo_cliente | capitalize }}</span>
+          </td>
+          <td><span style="font-size:.85rem">{{ e.responsable or '—' }}</span></td>
+          <td>
+            {% if e.proyecto %}
+            <span class="badge-detail badge-primary" style="font-size:.75rem">
+              <i class="bi bi-folder me-1"></i>{{ e.proyecto }}
+            </span>
+            {% else %}<span class="text-muted" style="font-size:.8rem">—</span>{% endif %}
+          </td>
+          <td><span style="font-size:.85rem">{{ e.division or '—' }}</span></td>
+          <td>
+            {% if e.necesita_devops %}
+              <span class="badge-status badge-warning"><i class="bi bi-gear me-1"></i>Sí</span>
+            {% else %}
+              <span class="text-muted" style="font-size:.8rem">No</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              <a href="{{ url_for('detalle_entregable', id=e.id) }}" class="btn btn-sm btn-outline-primary" title="Ver detalle">
+                <i class="bi bi-eye"></i>
+              </a>
+              <button class="btn btn-sm btn-outline-danger"
+                      title="Eliminar"
+                      data-bs-toggle="modal"
+                      data-bs-target="#modalEliminar{{ e.id }}">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+
+            {# Mini modal por fila #}
+            <div class="modal fade" id="modalEliminar{{ e.id }}" tabindex="-1">
+              <div class="modal-dialog modal-dialog-centered modal-sm">
+                <div class="modal-content border-0 shadow">
+                  <div class="modal-header border-0 pb-0">
+                    <h6 class="modal-title fw-bold">¿Eliminar?</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                  </div>
+                  <div class="modal-body py-2" style="font-size:.85rem">
+                    <strong>{{ e.folio }}</strong> — {{ e.nombre }}
+                    <p class="text-danger mb-0 mt-1"><i class="bi bi-exclamation-triangle me-1"></i>Acción permanente.</p>
+                  </div>
+                  <div class="modal-footer border-0 pt-0 gap-2">
+                    <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <form method="POST" action="{{ url_for('eliminar_entregable', id=e.id) }}" class="d-inline">
+                      <button type="submit" class="btn btn-sm btn-danger"><i class="bi bi-trash me-1"></i>Eliminar</button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Paginación + contador #}
+  <div class="d-flex justify-content-between align-items-center px-4 py-3 border-top" style="font-size:.85rem">
+    <span id="rowCount" class="text-muted"></span>
+    <nav>
+      <ul class="pagination pagination-sm mb-0 gap-1" id="paginationWrap"></ul>
+    </nav>
+  </div>
+
+  {# Empty state #}
+  <div id="emptyState" class="empty-state d-none">
+    <i class="bi bi-search"></i>
+    <p>No se encontraron entregables con los filtros aplicados.</p>
+    <button class="btn btn-outline-secondary btn-sm mt-2" onclick="clearAllFilters()">Limpiar filtros</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const PAGE_SIZE = 20;
+  let currentPage = 1;
+  let filtered = [];
+
+  const tbody = document.getElementById('tableBody');
+  const allRows = Array.from(tbody.querySelectorAll('tr'));
+  let sortCol = null, sortAsc = true;
+
+  function getVal(row, col) {
+    return (row.dataset[col] || '').toLowerCase();
+  }
+
+  function applyFilters() {
+    const q        = document.getElementById('searchInput').value.toLowerCase();
+    const estatus  = document.getElementById('filterEstatus').value.toLowerCase();
+    const sem      = document.getElementById('filterSemaforo').value.toLowerCase();
+    const div      = document.getElementById('filterDivision').value.toLowerCase();
+    const proyecto = document.getElementById('filterProyecto').value.toLowerCase();
+    const devops   = document.getElementById('filterDevops').value;
+
+    filtered = allRows.filter(r => {
+      const matchQ   = !q        || ['folio','nombre','responsable'].some(c => getVal(r, c).includes(q));
+      const matchE   = !estatus  || getVal(r,'estatus') === estatus;
+      const matchS   = !sem      || getVal(r,'semaforo') === sem;
+      const matchD   = !div      || getVal(r,'division') === div;
+      const matchP   = !proyecto || getVal(r,'proyecto') === proyecto;
+      const matchDev = devops === '' || r.dataset.devops === devops;
+      return matchQ && matchE && matchS && matchD && matchP && matchDev;
+    });
+
+    if (sortCol) {
+      filtered.sort((a, b) => {
+        const va = getVal(a, sortCol), vb = getVal(b, sortCol);
+        return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+      });
+    }
+
+    currentPage = 1;
+    render();
+  }
+
+  function render() {
+    const total = filtered.length;
+    const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const pageRows = filtered.slice(start, start + PAGE_SIZE);
+
+    allRows.forEach(r => r.classList.add('d-none'));
+    pageRows.forEach(r => r.classList.remove('d-none'));
+
+    document.getElementById('rowCount').textContent =
+      total === 0 ? '' : `${start+1}–${Math.min(start+PAGE_SIZE, total)} de ${total} entregables`;
+    document.getElementById('emptyState').classList.toggle('d-none', total > 0);
+    document.querySelector('table').classList.toggle('d-none', total === 0);
+
+    renderPagination(pages);
+  }
+
+  function renderPagination(pages) {
+    const wrap = document.getElementById('paginationWrap');
+    wrap.innerHTML = '';
+    if (pages <= 1) return;
+
+    const btn = (label, page, disabled, active) => {
+      const li = document.createElement('li');
+      li.className = 'page-item' + (disabled ? ' disabled' : '') + (active ? ' active' : '');
+      li.innerHTML = `<a class="page-link" href="#">${label}</a>`;
+      if (!disabled) li.querySelector('a').addEventListener('click', e => {
+        e.preventDefault(); currentPage = page; render();
+      });
+      wrap.appendChild(li);
+    };
+
+    btn('‹', currentPage - 1, currentPage === 1, false);
+    for (let i = 1; i <= pages; i++) {
+      if (pages > 7 && Math.abs(i - currentPage) > 2 && i !== 1 && i !== pages) {
+        if (i === 2 || i === pages - 1) { btn('…', null, true, false); }
+        continue;
+      }
+      btn(i, i, false, i === currentPage);
+    }
+    btn('›', currentPage + 1, currentPage === pages, false);
+  }
+
+  // Sorting
+  document.querySelectorAll('th.sortable').forEach(th => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (sortCol === col) sortAsc = !sortAsc;
+      else { sortCol = col; sortAsc = true; }
+      document.querySelectorAll('.sort-icon').forEach(i => i.className = 'bi bi-chevron-expand sort-icon');
+      th.querySelector('.sort-icon').className = 'bi ' + (sortAsc ? 'bi-chevron-up' : 'bi-chevron-down') + ' sort-icon';
+      applyFilters();
+    });
+  });
+
+  // Events
+  ['searchInput','filterEstatus','filterSemaforo','filterDivision','filterProyecto','filterDevops'].forEach(id => {
+    document.getElementById(id).addEventListener('input', applyFilters);
+    document.getElementById(id).addEventListener('change', applyFilters);
+  });
+
+  document.getElementById('clearFilters').addEventListener('click', clearAllFilters);
+
+  function clearAllFilters() {
+    document.getElementById('searchInput').value = '';
+    ['filterEstatus','filterSemaforo','filterDivision','filterProyecto','filterDevops'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    applyFilters();
+  }
+  window.clearAllFilters = clearAllFilters;
+
+  // Init
+  filtered = [...allRows];
+  render();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,289 @@
+{% extends 'base.html' %}
+{% block content %}
+
+{# ── Breadcrumb ───────────────────────────────────────────────────── #}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb mb-0" style="font-size:.85rem">
+    <li class="breadcrumb-item"><a href="{{ url_for('okr') }}" class="text-decoration-none">OKRs</a></li>
+    {% if obj.ciclo_nombre %}
+    <li class="breadcrumb-item">
+      <a href="{{ url_for('okr', ciclo=obj.ciclo_id_ref) }}" class="text-decoration-none">{{ obj.ciclo_nombre }}</a>
+    </li>
+    {% endif %}
+    <li class="breadcrumb-item active">{{ obj.titulo[:50] }}{% if obj.titulo|length > 50 %}…{% endif %}</li>
+  </ol>
+</nav>
+
+{# ── Cabecera del objetivo ─────────────────────────────────────────── #}
+<div class="card mb-4" style="border-left:5px solid {{ obj.color }}">
+  <div class="card-body p-4">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+      <div class="flex-grow-1">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <span style="width:14px;height:14px;border-radius:50%;background:{{ obj.color }};flex-shrink:0"></span>
+          <span class="badge-detail badge-{% if obj.semaforo == 'verde' %}success{% elif obj.semaforo == 'amarillo' %}warning{% else %}danger{% endif %}">
+            {{ obj.progreso }}% completado
+          </span>
+          {% if obj.ciclo_nombre %}
+          <span class="badge-detail badge-primary">{{ obj.ciclo_nombre }}</span>
+          {% endif %}
+        </div>
+        <h3 class="fw-bold mb-1">{{ obj.titulo }}</h3>
+        {% if obj.descripcion %}
+        <p class="text-muted mb-1">{{ obj.descripcion }}</p>
+        {% endif %}
+        {% if obj.responsable_nombre %}
+        <small class="text-muted"><i class="bi bi-person me-1"></i>{{ obj.responsable_nombre }}</small>
+        {% endif %}
+      </div>
+      <div class="d-flex gap-2 flex-shrink-0">
+        <form method="POST" action="{{ url_for('eliminar_objetivo', id=obj.id) }}"
+              onsubmit="return confirm('¿Eliminar este objetivo y todos sus Key Results?')">
+          <button class="btn btn-sm btn-outline-danger">
+            <i class="bi bi-trash me-1"></i>Eliminar objetivo
+          </button>
+        </form>
+      </div>
+    </div>
+
+    {# Barra de progreso global #}
+    <div class="mt-3">
+      <div class="d-flex justify-content-between mb-1" style="font-size:.8rem;color:var(--text-muted)">
+        <span>Progreso del objetivo (promedio de KRs)</span>
+        <span class="fw-700">{{ obj.progreso }}%</span>
+      </div>
+      <div class="progress" style="height:12px;border-radius:99px">
+        <div class="progress-bar {% if obj.progreso >= 70 %}bg-success{% elif obj.progreso >= 40 %}bg-warning{% else %}bg-danger{% endif %}"
+             style="width:{{ obj.progreso }}%;border-radius:99px;transition:width .6s"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Key Results ─────────────────────────────────────────────────── #}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="fw-bold mb-0"><i class="bi bi-key me-2 text-primary"></i>Key Results</h5>
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalNuevoKR">
+    <i class="bi bi-plus-lg me-1"></i>Agregar KR
+  </button>
+</div>
+
+{% if not obj.key_results %}
+<div class="empty-state mb-4" style="padding:2.5rem">
+  <i class="bi bi-key" style="font-size:2.5rem;opacity:.2;color:var(--primary)"></i>
+  <p class="mt-3 mb-1 fw-600">Sin Key Results</p>
+  <p class="text-muted mb-3">Define resultados medibles para este objetivo.</p>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNuevoKR">
+    <i class="bi bi-plus-lg me-1"></i>Agregar primer KR
+  </button>
+</div>
+{% endif %}
+
+{% for kr in obj.key_results %}
+<div class="card mb-3">
+  <div class="card-header-custom">
+    <div class="flex-grow-1 me-2">
+      <span class="fw-600">{{ kr.descripcion }}</span>
+      {% if kr.metrica %}
+        <span class="text-muted ms-2" style="font-size:.8rem">— {{ kr.metrica }}</span>
+      {% endif %}
+    </div>
+    <div class="d-flex align-items-center gap-2 flex-shrink-0">
+      <span class="sem-dot sem-{{ kr.semaforo }}"></span>
+      <span class="fw-700" style="min-width:38px;text-align:right;
+            color:{% if kr.semaforo == 'verde' %}var(--success){% elif kr.semaforo == 'amarillo' %}var(--warning){% else %}var(--danger){% endif %}">
+        {{ kr.progreso }}%
+      </span>
+      <form method="POST" action="{{ url_for('eliminar_kr', id=kr.id) }}" class="d-inline"
+            onsubmit="return confirm('¿Eliminar este Key Result?')">
+        <button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-trash"></i></button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card-body p-3">
+    {# Progreso visual con valores #}
+    <div class="mb-3">
+      <div class="d-flex justify-content-between mb-1" style="font-size:.78rem;color:var(--text-muted)">
+        <span>{{ kr.valor_inicial }} {{ kr.unidad }}</span>
+        <span class="fw-600" style="color:{% if kr.semaforo == 'verde' %}var(--success){% elif kr.semaforo == 'amarillo' %}var(--warning){% else %}var(--danger){% endif %}">
+          {{ kr.valor_actual }} {{ kr.unidad }} actual
+        </span>
+        <span>Meta: {{ kr.valor_meta }} {{ kr.unidad }}</span>
+      </div>
+      <div class="progress" style="height:10px;border-radius:99px">
+        <div class="progress-bar {% if kr.semaforo == 'verde' %}bg-success{% elif kr.semaforo == 'amarillo' %}bg-warning{% else %}bg-danger{% endif %}"
+             style="width:{{ kr.progreso }}%;border-radius:99px;transition:width .6s"></div>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      {# Entregables vinculados #}
+      <div class="col-md-8">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="fw-600" style="font-size:.85rem"><i class="bi bi-link-45deg me-1 text-primary"></i>Entregables vinculados</span>
+          <button class="btn btn-sm btn-outline-primary py-0"
+                  data-bs-toggle="modal" data-bs-target="#modalVincular{{ kr.id }}">
+            <i class="bi bi-plus-sm"></i> Vincular
+          </button>
+        </div>
+
+        {% if kr.entregables %}
+        <div class="d-flex flex-column gap-1">
+          {% for e in kr.entregables %}
+          <div class="d-flex justify-content-between align-items-center p-2 rounded"
+               style="background:var(--surface-secondary);font-size:.82rem">
+            <div class="d-flex align-items-center gap-2 flex-grow-1 me-2 min-width-0">
+              <span class="sem-dot sem-{{ e.semaforo_cliente }}"></span>
+              <div class="text-truncate">
+                <a href="{{ url_for('detalle_entregable', id=e.id) }}" class="text-decoration-none fw-600">{{ e.nombre }}</a>
+                <span class="text-muted ms-1">{{ e.folio or '' }}</span>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2 flex-shrink-0">
+              <span class="badge-detail badge-secondary">{{ e.porcentaje_avance or 0 }}%</span>
+              <span class="badge-detail badge-primary" title="Contribución a este KR">
+                <i class="bi bi-arrow-up-right me-1"></i>{{ e.contribucion_pct }}%
+              </span>
+              <form method="POST"
+                    action="{{ url_for('desvincular_entregable_kr', kr_id=kr.id, ent_id=e.id) }}"
+                    class="d-inline">
+                <button class="btn btn-sm btn-link text-danger p-0 ms-1"
+                        title="Desvincular" onclick="return confirm('¿Desvincular este entregable?')">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </form>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted mb-0" style="font-size:.82rem">
+          <i class="bi bi-info-circle me-1"></i>Sin entregables vinculados.
+          Vincúlalos para calcular el progreso automáticamente.
+        </p>
+        {% endif %}
+      </div>
+
+      {# Actualizar valor manual #}
+      <div class="col-md-4">
+        <span class="fw-600 d-block mb-2" style="font-size:.85rem">
+          <i class="bi bi-pencil-square me-1 text-primary"></i>Actualizar valor manual
+        </span>
+        <form method="POST" action="{{ url_for('actualizar_kr', id=kr.id) }}"
+              class="d-flex gap-2 align-items-end">
+          <div class="flex-grow-1">
+            <label class="form-label mb-1" style="font-size:.78rem;color:var(--text-muted)">
+              Valor actual ({{ kr.unidad }})
+            </label>
+            <input type="number" name="valor_actual" class="form-control form-control-sm"
+                   value="{{ kr.valor_actual }}" step="0.01" min="{{ kr.valor_inicial }}" max="{{ kr.valor_meta }}">
+          </div>
+          <button class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-check-lg"></i>
+          </button>
+        </form>
+        <p class="text-muted mt-1 mb-0" style="font-size:.72rem">
+          Solo aplica si no hay entregables vinculados.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Modal vincular entregable a este KR #}
+<div class="modal fade" id="modalVincular{{ kr.id }}" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('vincular_entregable_kr', kr_id=kr.id) }}">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-link-45deg me-2 text-primary"></i>Vincular entregable</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted mb-3" style="font-size:.85rem">
+            KR: <strong>{{ kr.descripcion[:80] }}</strong>
+          </p>
+          {% set ya_vinculados = kr.entregables | map(attribute='id') | list %}
+          {% set disponibles = all_entregables | rejectattr('id', 'in', ya_vinculados) | list %}
+          {% if disponibles %}
+          <div class="mb-3">
+            <label class="form-label fw-600">Entregable <span class="text-danger">*</span></label>
+            <select name="entregable_id" class="form-select" required>
+              <option value="">Seleccionar…</option>
+              {% for e in disponibles %}
+              <option value="{{ e.id }}">{{ e.folio or '' }} — {{ e.nombre[:50] }}{% if e.nombre|length > 50 %}…{% endif %} ({{ e.estatus }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Contribución a este KR (%)</label>
+            <input type="number" name="contribucion_pct" class="form-control"
+                   value="100" min="1" max="100">
+            <div class="form-text">Peso de este entregable en el progreso del KR.</div>
+          </div>
+          {% else %}
+          <div class="alert alert-info mb-0">
+            <i class="bi bi-info-circle me-2"></i>Todos los entregables ya están vinculados a este KR.
+          </div>
+          {% endif %}
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          {% if disponibles %}
+          <button type="submit" class="btn btn-primary"><i class="bi bi-link-45deg me-1"></i>Vincular</button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+
+{# ── Modal: Nuevo Key Result ──────────────────────────────────────── #}
+<div class="modal fade" id="modalNuevoKR" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('crear_kr') }}">
+        <input type="hidden" name="objetivo_id" value="{{ obj.id }}">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-key me-2 text-primary"></i>Nuevo Key Result</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-600">Descripción del resultado <span class="text-danger">*</span></label>
+            <input type="text" name="descripcion" class="form-control" required
+                   placeholder="Ej: Reducir errores de pago al 5% o menos">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Métrica (opcional)</label>
+            <input type="text" name="metrica" class="form-control"
+                   placeholder="Ej: % de pagos sin error">
+          </div>
+          <div class="row g-3">
+            <div class="col-4">
+              <label class="form-label fw-600">Valor inicial</label>
+              <input type="number" name="valor_inicial" class="form-control" value="0" step="0.01">
+            </div>
+            <div class="col-4">
+              <label class="form-label fw-600">Meta <span class="text-danger">*</span></label>
+              <input type="number" name="valor_meta" class="form-control" value="100" step="0.01" required>
+            </div>
+            <div class="col-4">
+              <label class="form-label fw-600">Unidad</label>
+              <input type="text" name="unidad" class="form-control" value="%" placeholder="%, días, #…">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Crear KR</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

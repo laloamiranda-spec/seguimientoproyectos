@@ -1,0 +1,414 @@
+{% extends 'base.html' %}
+{% block content %}
+
+{# ── Breadcrumb ───────────────────────────────────────────────────── #}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb mb-0" style="font-size:.85rem">
+    <li class="breadcrumb-item"><a href="{{ url_for('soporte') }}" class="text-decoration-none">Soporte</a></li>
+    <li class="breadcrumb-item active">{{ tema.titulo[:60] }}{% if tema.titulo|length > 60 %}…{% endif %}</li>
+  </ol>
+</nav>
+
+{# ── Cabecera ─────────────────────────────────────────────────────── #}
+<div class="card mb-4">
+  <div class="card-body p-4">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+      <div class="flex-grow-1">
+        <div class="d-flex gap-2 flex-wrap mb-2">
+          <span class="badge-detail badge-{% if tema.tipo == 'SQL' %}warning{% elif tema.tipo == 'Sistema' %}primary{% elif tema.tipo == 'Integración' %}info{% elif tema.tipo == 'Proceso' %}success{% else %}secondary{% endif %}">
+            <i class="bi bi-{% if tema.tipo == 'SQL' %}database{% elif tema.tipo == 'Sistema' %}display{% elif tema.tipo == 'Integración' %}arrow-left-right{% elif tema.tipo == 'Proceso' %}diagram-3{% else %}tag{% endif %} me-1"></i>
+            {{ tema.tipo }}
+          </span>
+          {% if tema.division_nombre %}
+          <span class="badge-detail badge-secondary">{{ tema.division_nombre }}</span>
+          {% endif %}
+          <span class="badge-detail badge-secondary">
+            {{ tema.causas|length }} causa{{ 's' if tema.causas|length != 1 }}
+          </span>
+        </div>
+        <h3 class="fw-bold mb-1">{{ tema.titulo }}</h3>
+        {% if tema.descripcion %}
+        <p class="text-muted mb-1">{{ tema.descripcion }}</p>
+        {% endif %}
+        {% if tema.url_proyecto %}
+        <a href="{{ tema.url_proyecto }}" target="_blank" class="text-decoration-none"
+           style="color:var(--primary);font-size:.875rem">
+          <i class="bi bi-box-arrow-up-right me-1"></i>{{ tema.url_proyecto }}
+        </a>
+        {% endif %}
+      </div>
+      <div class="d-flex gap-2 flex-shrink-0">
+        <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalEditarTema">
+          <i class="bi bi-pencil me-1"></i>Editar
+        </button>
+        <form method="POST" action="{{ url_for('eliminar_tema_soporte', id=tema.id) }}"
+              onsubmit="return confirm('¿Eliminar este tema y todo su contenido?')">
+          <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>Eliminar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  {# ── Columna principal: Causas y Soluciones ───────────────────────── #}
+  <div class="col-lg-8">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="fw-bold mb-0"><i class="bi bi-exclamation-triangle me-2 text-warning"></i>Causas y soluciones</h5>
+      <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#modalNuevaCausa">
+        <i class="bi bi-plus-lg me-1"></i>Agregar causa
+      </button>
+    </div>
+
+    {% if not tema.causas %}
+    <div class="empty-state" style="padding:2.5rem">
+      <i class="bi bi-question-circle" style="font-size:2.5rem;opacity:.2;color:var(--warning)"></i>
+      <p class="mt-3 mb-1 fw-600">Sin causas registradas</p>
+      <p class="text-muted mb-3">Agrega las causas conocidas para este problema recurrente.</p>
+      <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalNuevaCausa">
+        <i class="bi bi-plus-lg me-1"></i>Agregar primera causa
+      </button>
+    </div>
+    {% endif %}
+
+    {% for causa in tema.causas %}
+    <div class="card mb-3">
+      <div class="card-header-custom" style="background:var(--warning-soft)">
+        <div class="d-flex align-items-center gap-2 flex-grow-1">
+          <span style="width:24px;height:24px;border-radius:50%;background:var(--warning);
+                       color:#fff;display:flex;align-items:center;justify-content:center;
+                       font-weight:700;font-size:.75rem;flex-shrink:0">{{ loop.index }}</span>
+          <span class="fw-600" style="color:var(--warning)">{{ causa.descripcion }}</span>
+        </div>
+        <div class="d-flex gap-1 flex-shrink-0">
+          <button class="btn btn-sm btn-outline-success py-0"
+                  data-bs-toggle="modal" data-bs-target="#modalSolucion{{ causa.id }}">
+            <i class="bi bi-plus-sm"></i> Solución
+          </button>
+          <form method="POST" action="{{ url_for('eliminar_causa', causa_id=causa.id) }}" class="d-inline"
+                onsubmit="return confirm('¿Eliminar esta causa y sus soluciones?')">
+            <button class="btn btn-sm btn-outline-danger py-0"><i class="bi bi-trash"></i></button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card-body p-0">
+        {% if causa.soluciones %}
+        {% for sol in causa.soluciones %}
+        <div class="p-3 {% if not loop.last %}border-bottom{% endif %}">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <div class="d-flex align-items-center gap-2">
+              <span style="width:20px;height:20px;border-radius:50%;background:var(--success-soft);
+                           color:var(--success);display:flex;align-items:center;justify-content:center;
+                           font-size:.7rem;font-weight:700;flex-shrink:0">✓</span>
+              <span class="fw-600" style="font-size:.875rem">{{ sol.descripcion }}</span>
+            </div>
+            <form method="POST" action="{{ url_for('eliminar_solucion', sol_id=sol.id) }}" class="d-inline ms-2"
+                  onsubmit="return confirm('¿Eliminar esta solución?')">
+              <button class="btn btn-sm btn-link text-danger p-0"><i class="bi bi-x-lg"></i></button>
+            </form>
+          </div>
+
+          {% if sol.codigo_sql %}
+          <div class="mt-2 rounded overflow-hidden" style="border:1px solid #1E293B">
+            <div class="d-flex justify-content-between align-items-center px-3 py-1"
+                 style="background:#1E293B">
+              <span style="font-size:.72rem;color:#94A3B8;font-weight:500">
+                <i class="bi bi-database me-1"></i>SQL
+              </span>
+              <button class="btn btn-sm btn-link p-0 copy-sql"
+                      style="color:#94A3B8;font-size:.72rem"
+                      data-code="{{ sol.codigo_sql | e }}"
+                      title="Copiar SQL">
+                <i class="bi bi-clipboard me-1"></i>Copiar
+              </button>
+            </div>
+            <pre class="mb-0 p-3" style="background:#0F172A;color:#E2E8F0;font-size:.78rem;
+                 line-height:1.6;overflow-x:auto;white-space:pre;max-height:320px">{{ sol.codigo_sql }}</pre>
+          </div>
+          {% endif %}
+
+          {% if sol.url_ref %}
+          <div class="mt-2">
+            <a href="{{ sol.url_ref }}" target="_blank" class="text-decoration-none"
+               style="font-size:.78rem;color:var(--primary)">
+              <i class="bi bi-link-45deg me-1"></i>{{ sol.url_ref[:80] }}{% if sol.url_ref|length > 80 %}…{% endif %}
+            </a>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="p-3 text-muted" style="font-size:.82rem">
+          <i class="bi bi-lightbulb me-1"></i>Sin soluciones registradas para esta causa.
+          <button class="btn btn-sm btn-link p-0 ms-1"
+                  data-bs-toggle="modal" data-bs-target="#modalSolucion{{ causa.id }}">
+            Agregar solución
+          </button>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Modal agregar solución para esta causa #}
+    <div class="modal fade" id="modalSolucion{{ causa.id }}" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <form method="POST" action="{{ url_for('agregar_solucion', causa_id=causa.id) }}">
+            <div class="modal-header">
+              <h5 class="modal-title">
+                <i class="bi bi-lightbulb me-2 text-success"></i>Nueva solución
+              </h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <p class="text-muted mb-3" style="font-size:.85rem">
+                Causa: <strong>{{ causa.descripcion[:80] }}</strong>
+              </p>
+              <div class="mb-3">
+                <label class="form-label fw-600">Descripción de la solución <span class="text-danger">*</span></label>
+                <textarea name="descripcion" class="form-control" rows="3" required
+                          placeholder="Describe los pasos o la solución aplicada…"></textarea>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-600">
+                  <i class="bi bi-database me-1 text-warning"></i>Script SQL
+                  <span class="text-muted fw-400" style="font-size:.8rem">(opcional)</span>
+                </label>
+                <textarea name="codigo_sql" class="form-control font-monospace" rows="6"
+                          style="font-size:.82rem"
+                          placeholder="SELECT * FROM tabla WHERE condicion = 'valor';
+-- O cualquier script de diagnóstico / solución"></textarea>
+              </div>
+              <div class="mb-1">
+                <label class="form-label fw-600">
+                  URL de referencia
+                  <span class="text-muted fw-400" style="font-size:.8rem">(opcional)</span>
+                </label>
+                <input type="url" name="url_ref" class="form-control"
+                       placeholder="https://docs.empresa.com/… o ticket de soporte">
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+              <button type="submit" class="btn btn-success">
+                <i class="bi bi-check-lg me-1"></i>Guardar solución
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ── Panel derecho ────────────────────────────────────────────────── #}
+  <div class="col-lg-4">
+
+    {# Entregables vinculados #}
+    <div class="card mb-4">
+      <div class="card-header-custom">
+        <i class="bi bi-link-45deg me-2 text-primary"></i>Entregables vinculados
+        <span class="badge bg-secondary ms-auto">{{ tema.entregables|length }}</span>
+      </div>
+      <div class="card-body p-0">
+        {% if tema.entregables %}
+        <ul class="list-group list-group-flush">
+          {% for e in tema.entregables %}
+          <li class="list-group-item py-2 px-3 d-flex justify-content-between align-items-start">
+            <div class="flex-grow-1 me-2">
+              <div class="d-flex align-items-center gap-2">
+                <span class="sem-dot sem-{{ e.semaforo_cliente }}"></span>
+                <a href="{{ url_for('detalle_entregable', id=e.id) }}"
+                   class="text-decoration-none fw-600" style="font-size:.85rem;color:var(--text)">
+                  {{ e.nombre[:45] }}{% if e.nombre|length > 45 %}…{% endif %}
+                </a>
+              </div>
+              <div class="mt-1 d-flex gap-1 flex-wrap">
+                {% if e.folio %}
+                <span class="badge-detail badge-secondary" style="font-size:.68rem">{{ e.folio }}</span>
+                {% endif %}
+                <span class="badge-detail badge-{% if e.estatus == 'Completado' %}success{% elif e.estatus == 'En progreso' %}primary{% else %}secondary{% endif %}"
+                      style="font-size:.68rem">{{ e.estatus or 'Borrador' }}</span>
+                <span class="badge-detail badge-secondary" style="font-size:.68rem">
+                  {{ e.porcentaje_avance or 0 }}%
+                </span>
+              </div>
+            </div>
+            <form method="POST"
+                  action="{{ url_for('desvincular_entregable_soporte', tema_id=tema.id, ent_id=e.id) }}"
+                  class="d-inline">
+              <button class="btn btn-sm btn-link text-danger p-0"
+                      onclick="return confirm('¿Desvincular este entregable?')"
+                      title="Desvincular">
+                <i class="bi bi-x-lg"></i>
+              </button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="p-3 text-muted text-center" style="font-size:.82rem">
+          <i class="bi bi-collection me-1"></i>Sin entregables vinculados.
+        </div>
+        {% endif %}
+
+        {# Vincular entregable #}
+        {% if disponibles %}
+        <div class="p-2 border-top">
+          <form method="POST" action="{{ url_for('vincular_entregable_soporte', tema_id=tema.id) }}"
+                class="d-flex gap-2">
+            <select name="entregable_id" class="form-select form-select-sm flex-grow-1">
+              <option value="">Vincular entregable…</option>
+              {% for e in disponibles %}
+              <option value="{{ e.id }}">
+                {{ e.folio or '' }}{% if e.folio %} — {% endif %}{{ e.nombre[:40] }}
+              </option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-sm btn-outline-primary flex-shrink-0">
+              <i class="bi bi-link-45deg"></i>
+            </button>
+          </form>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Resumen rápido #}
+    <div class="card">
+      <div class="card-header-custom">
+        <i class="bi bi-bar-chart me-2 text-primary"></i>Resumen
+      </div>
+      <div class="card-body p-3">
+        <div class="d-flex flex-column gap-2" style="font-size:.85rem">
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">Total causas</span>
+            <span class="fw-700">{{ tema.causas|length }}</span>
+          </div>
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">Total soluciones</span>
+            <span class="fw-700">{{ tema.causas | map(attribute='soluciones') | map('length') | sum }}</span>
+          </div>
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">Con SQL</span>
+            {% set con_sql = namespace(n=0) %}
+            {% for c in tema.causas %}{% for s in c.soluciones %}{% if s.codigo_sql %}{% set con_sql.n = con_sql.n + 1 %}{% endif %}{% endfor %}{% endfor %}
+            <span class="fw-700" style="color:var(--warning)">{{ con_sql.n }}</span>
+          </div>
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">Entregables asociados</span>
+            <span class="fw-700">{{ tema.entregables|length }}</span>
+          </div>
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">Registrado</span>
+            <span class="fw-700">{{ tema.creado_en.strftime('%d/%m/%Y') if tema.creado_en else '—' }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: Agregar causa ─────────────────────────────────────────── #}
+<div class="modal fade" id="modalNuevaCausa" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('agregar_causa', tema_id=tema.id) }}">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-exclamation-triangle me-2 text-warning"></i>Nueva causa
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-1">
+            <label class="form-label fw-600">Descripción de la causa <span class="text-danger">*</span></label>
+            <textarea name="descripcion" class="form-control" rows="3" required
+                      placeholder="Ej: El UUID no se genera cuando el campo está nulo en la tabla de origen…"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-warning text-white">
+            <i class="bi bi-check-lg me-1"></i>Agregar causa
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: Editar tema ───────────────────────────────────────────── #}
+<div class="modal fade" id="modalEditarTema" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('editar_tema_soporte', id=tema.id) }}">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-pencil me-2 text-primary"></i>Editar tema</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-600">Título <span class="text-danger">*</span></label>
+            <input type="text" name="titulo" class="form-control"
+                   value="{{ tema.titulo }}" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-600">Descripción</label>
+            <textarea name="descripcion" class="form-control" rows="2">{{ tema.descripcion or '' }}</textarea>
+          </div>
+          <div class="row g-3">
+            <div class="col-6">
+              <label class="form-label fw-600">Tipo</label>
+              <select name="tipo" class="form-select">
+                {% for t in tipos %}
+                <option value="{{ t }}" {% if t == tema.tipo %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-600">División</label>
+              <select name="division_id" class="form-select">
+                <option value="">Sin división</option>
+                {% for d in divisiones %}
+                <option value="{{ d.id }}" {% if d.id == tema.division_id %}selected{% endif %}>{{ d.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="mt-3">
+            <label class="form-label fw-600">URL del proyecto</label>
+            <input type="url" name="url_proyecto" class="form-control"
+                   value="{{ tema.url_proyecto or '' }}" placeholder="https://…">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-lg me-1"></i>Guardar cambios
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Copiar SQL al portapapeles
+  document.querySelectorAll('.copy-sql').forEach(btn => {
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(btn.dataset.code).then(() => {
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copiado';
+        btn.style.color = '#6EE7B7';
+        setTimeout(() => { btn.innerHTML = orig; btn.style.color = ''; }, 2000);
+      });
+    });
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,306 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+  <div>
+    {% if entregable %}
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mb-1">
+        <li class="breadcrumb-item"><a href="{{ url_for('entregables') }}">Entregables</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('detalle_entregable', id=entregable.id) }}">{{ entregable.folio or 'Detalle' }}</a></li>
+        <li class="breadcrumb-item active">Editar</li>
+      </ol>
+    </nav>
+    <h2 class="fw-bold mb-0">Editar entregable</h2>
+    <p class="text-muted mb-0">Modifica los datos del entregable.</p>
+    {% else %}
+    <h2 class="fw-bold mb-0">Nuevo entregable</h2>
+    <p class="text-muted mb-0">Captura los datos del entregable y asigna responsable.</p>
+    {% endif %}
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('entregables') }}">
+    <i class="bi bi-arrow-left me-1"></i>Volver
+  </a>
+</div>
+
+<form method="POST">
+  <div class="row gy-4">
+
+    {# ── Columna principal ───────────────────────────────────────────── #}
+    <div class="col-lg-8">
+
+      {# Sección 1: Identificación #}
+      <div class="card mb-4">
+        <div class="form-section">
+          <div class="form-section-title">
+            <i class="bi bi-tag text-primary"></i>Identificación
+          </div>
+          <div class="row gy-3">
+            <div class="col-md-4">
+              <label class="form-label">Folio</label>
+              {% if entregable and entregable.folio %}
+              {# Edición: mostrar folio asignado, inmutable #}
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-hash"></i></span>
+                <input type="text" class="form-control bg-light fw-bold" value="{{ entregable.folio }}" readonly>
+              </div>
+              <div class="form-text"><i class="bi bi-lock me-1"></i>El folio no cambia al editar.</div>
+              {% else %}
+              {# Nuevo: preview dinámico según división seleccionada #}
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-hash"></i></span>
+                <input type="text" id="folioPreview" class="form-control bg-light fw-bold text-primary"
+                       value="—" readonly placeholder="Selecciona división…">
+              </div>
+              <div class="form-text"><i class="bi bi-magic me-1"></i>Se genera al guardar según la división.</div>
+              {% endif %}
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Nombre <span class="text-danger">*</span></label>
+              <input name="nombre" class="form-control" placeholder="Nombre descriptivo del entregable" required
+                     value="{{ entregable.nombre if entregable else '' }}">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Descripción</label>
+              <textarea name="descripcion" class="form-control" rows="2"
+                        placeholder="¿Qué incluye este entregable?">{{ entregable.descripcion if entregable else '' }}</textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">División</label>
+              <select name="division_id" id="divisionSelect" class="form-select">
+                <option value="">— Sin división —</option>
+                {% for d in divisiones %}
+                  <option value="{{ d.id }}" {{ 'selected' if entregable and entregable.division_id == d.id else '' }}>{{ d.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Key User</label>
+              <select name="key_user_id" class="form-select">
+                <option value="">— Sin key user —</option>
+                {% for k in key_users %}
+                  <option value="{{ k.id }}" {{ 'selected' if entregable and entregable.key_user_id == k.id else '' }}>{{ k.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">
+                <i class="bi bi-folder me-1 text-primary"></i>Proyecto
+              </label>
+              <select name="proyecto_id" class="form-select">
+                <option value="">— Sin proyecto —</option>
+                {% for pr in proyectos %}
+                  <option value="{{ pr.id }}" {{ 'selected' if entregable and entregable.proyecto_id == pr.id else '' }}>
+                    {{ pr.nombre }}
+                  </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">
+                <a href="{{ url_for('catalogo_proyectos') }}" target="_blank" class="text-decoration-none">
+                  <i class="bi bi-plus-circle me-1"></i>Administrar proyectos
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# Sección 2: Planificación y fechas #}
+      <div class="card mb-4">
+        <div class="form-section">
+          <div class="form-section-title">
+            <i class="bi bi-calendar3 text-success"></i>Planificación
+          </div>
+          <div class="row gy-3">
+            <div class="col-md-6">
+              <label class="form-label">Responsable <span class="text-danger">*</span></label>
+              <select name="responsable_id" class="form-select" required>
+                <option value="">— Seleccionar —</option>
+                {% for r in responsables %}
+                  <option value="{{ r.id }}" {{ 'selected' if entregable and entregable.responsable_id == r.id else '' }}>
+                    {{ r.nombre }} ({{ r.capacidad_horas_semana }} h/sem)
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Horas estimadas</label>
+              <input type="number" min="1" name="horas_desarrollo" class="form-control" placeholder="8"
+                     value="{{ entregable.horas_desarrollo if entregable else '8' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Estatus</label>
+              <select name="estatus" class="form-select">
+                {% for op in estatus_opciones %}
+                  <option value="{{ op }}" {{ 'selected' if entregable and entregable.estatus == op else ('selected' if not entregable and op == 'Borrador' else '') }}>{{ op }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="row gy-3 mt-1">
+            <div class="col-md-3">
+              <label class="form-label">Fecha inicio <span class="text-danger">*</span></label>
+              <input type="date" name="fecha_inicio" class="form-control" required
+                     value="{{ entregable.fecha_inicio if entregable else '' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Fin desarrollo</label>
+              <input type="date" name="fecha_fin_desarrollo" class="form-control"
+                     value="{{ entregable.fecha_fin_desarrollo if entregable else '' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Fecha entrega</label>
+              <input type="date" name="fecha_entrega" class="form-control"
+                     value="{{ entregable.fecha_entrega if entregable else '' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Fecha publicación</label>
+              <input type="date" name="fecha_publicacion" class="form-control"
+                     value="{{ entregable.fecha_publicacion if entregable else '' }}">
+            </div>
+          </div>
+          <div class="mt-3">
+            <label class="form-label">% Avance — <span id="avanceLbl">{{ (entregable.porcentaje_avance if entregable else 0) or 0 }}%</span></label>
+            <input type="range" name="porcentaje_avance" class="form-range" min="0" max="100" step="5"
+                   value="{{ (entregable.porcentaje_avance if entregable else 0) or 0 }}"
+                   oninput="document.getElementById('avanceLbl').textContent=this.value+'%'">
+            <div class="d-flex justify-content-between" style="font-size:.72rem;color:var(--text-muted)">
+              <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# Sección 3: FRD y técnico #}
+      <div class="card mb-4">
+        <div class="form-section">
+          <div class="form-section-title">
+            <i class="bi bi-file-earmark-check text-warning"></i>FRD &amp; Técnico
+          </div>
+          <div class="row gy-3">
+            <div class="col-12">
+              <div class="d-flex flex-wrap gap-3">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="frd_aplica" id="frdAplica"
+                         {{ 'checked' if entregable and entregable.frd_aplica else '' }}
+                         onchange="toggleFrd(this.checked)">
+                  <label class="form-check-label fw-500" for="frdAplica">Aplica FRD</label>
+                </div>
+                <div class="form-check form-switch" id="frdFirmadoWrap">
+                  <input class="form-check-input" type="checkbox" name="frd_firmado" id="frdFirmado"
+                         {{ 'checked' if entregable and entregable.frd_firmado else '' }}>
+                  <label class="form-check-label" for="frdFirmado">FRD firmado</label>
+                </div>
+                <div class="form-check form-switch" id="frdAceptacionWrap">
+                  <input class="form-check-input" type="checkbox" name="frd_aceptacion" id="frdAceptacion"
+                         {{ 'checked' if entregable and entregable.frd_aceptacion else '' }}>
+                  <label class="form-check-label" for="frdAceptacion">Aceptación firmada</label>
+                </div>
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="necesita_devops" id="devopsCheck"
+                         {{ 'checked' if entregable and entregable.necesita_devops else '' }}>
+                  <label class="form-check-label" for="devopsCheck">Necesita DevOps</label>
+                </div>
+              </div>
+            </div>
+            <div class="col-12" id="frdUrlWrap">
+              <label class="form-label">URL del documento FRD</label>
+              <input type="url" name="frd_url" class="form-control" placeholder="https://..."
+                     value="{{ entregable.frd_url if entregable else '' }}">
+              <div class="form-text">Enlace al documento FRD en SharePoint, Drive u otro repositorio.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# Sección 4: Gherkin #}
+      <div class="card mb-4">
+        <div class="form-section">
+          <div class="form-section-title">
+            <i class="bi bi-code-square text-success"></i>Criterios de aceptación (Gherkin)
+          </div>
+          <div class="row gy-3">
+            <div class="col-12">
+              <label class="form-label">Escenario(s) BDD
+                <span class="text-muted" style="font-size:.78rem;font-weight:400">— Given / When / Then</span>
+              </label>
+              <textarea name="gherkin" class="form-control font-monospace" rows="10"
+                        placeholder="Feature: Nombre del feature
+
+  Scenario: Descripción del escenario
+    Given que el usuario tiene acceso al sistema
+    When selecciona la opción de pago
+    Then el sistema procesa el pago correctamente
+    And muestra un mensaje de confirmación">{{ entregable.gherkin if entregable and entregable.gherkin else '' }}</textarea>
+              <div class="form-text">
+                <i class="bi bi-lightbulb me-1"></i>
+                Usa la sintaxis Gherkin estándar: <code>Feature</code>, <code>Scenario</code>,
+                <code>Given</code>, <code>When</code>, <code>Then</code>, <code>And</code>, <code>But</code>.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    {# ── Panel lateral ────────────────────────────────────────────────── #}
+    <div class="col-lg-4">
+      <div class="card mb-3">
+        <div class="card-header-custom">
+          <i class="bi bi-info-circle me-2 text-primary"></i>Guía rápida
+        </div>
+        <div class="card-body p-3">
+          <ul class="mb-0 ps-3" style="font-size:.82rem;color:var(--text-muted);line-height:1.8">
+            <li>El <strong>folio</strong> debe ser único por proyecto.</li>
+            <li>Las <strong>horas estimadas</strong> + capacidad del responsable calculan la fecha sugerida.</li>
+            <li>El <strong>FRD</strong> sigue el flujo: URL → Firma → Aceptación.</li>
+            <li>El semáforo se actualiza automáticamente según avance y fecha.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="d-grid gap-2">
+        <button type="submit" class="btn btn-primary py-2">
+          <i class="bi {% if entregable %}bi-floppy{% else %}bi-plus-lg{% endif %} me-2"></i>
+          {{ 'Guardar cambios' if entregable else 'Crear entregable' }}
+        </button>
+        <a href="{{ url_for('entregables') }}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function toggleFrd(checked) {
+    const wrap = document.getElementById('frdUrlWrap');
+    const firmadoWrap = document.getElementById('frdFirmadoWrap');
+    const acepWrap = document.getElementById('frdAceptacionWrap');
+    [wrap, firmadoWrap, acepWrap].forEach(el => {
+      el.style.opacity = checked ? '1' : '.4';
+      el.querySelectorAll('input').forEach(i => i.disabled = !checked);
+    });
+  }
+  // Init
+  toggleFrd(document.getElementById('frdAplica').checked);
+
+  // ── Preview de folio automático ──────────────────────────────────────
+  const divSel     = document.getElementById('divisionSelect');
+  const folioPreview = document.getElementById('folioPreview');
+
+  if (divSel && folioPreview) {
+    async function updateFolioPreview() {
+      const divId = divSel.value;
+      if (!divId) { folioPreview.value = '—'; return; }
+      try {
+        const res  = await fetch(`/api/folio-preview?division_id=${divId}`);
+        const data = await res.json();
+        folioPreview.value = data.folio || '—';
+      } catch { folioPreview.value = '…'; }
+    }
+    divSel.addEventListener('change', updateFolioPreview);
+    // Disparar al cargar si ya hay división seleccionada
+    if (divSel.value) updateFolioPreview();
+  }
+</script>
+{% endblock %}

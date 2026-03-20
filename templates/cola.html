@@ -1,0 +1,227 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="fw-bold mb-0"><i class="bi bi-list-ol me-2 text-primary"></i>Cola de trabajo</h2>
+    <p class="text-muted mb-0">Tareas activas ordenadas por proyecto. Arrastra para reordenar dentro de cada proyecto.</p>
+  </div>
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <span id="save-status" class="text-muted" style="font-size:.82rem"></span>
+    <a href="{{ url_for('entregables') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-list-task me-1"></i>Ver entregables
+    </a>
+  </div>
+</div>
+
+{# ── Filtro por proyecto ───────────────────────────────────────────────── #}
+<form method="GET" action="{{ url_for('cola_responsables') }}" class="mb-4">
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <label class="fw-600 mb-0" style="font-size:.875rem;white-space:nowrap">
+      <i class="bi bi-folder me-1 text-primary"></i>Filtrar por proyecto:
+    </label>
+    <select name="proyecto_id" class="form-select form-select-sm" style="max-width:220px"
+            onchange="this.form.submit()">
+      <option value="">— Todos los proyectos —</option>
+      {% for pr in proyectos %}
+      <option value="{{ pr.id }}" {{ 'selected' if proyecto_sel == pr.id }}>{{ pr.nombre }}</option>
+      {% endfor %}
+    </select>
+    {% if proyecto_sel %}
+    <a href="{{ url_for('cola_responsables') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-x-lg me-1"></i>Limpiar
+    </a>
+    {% endif %}
+    {% if proyecto_sel %}
+    <span class="badge-detail badge-primary" style="font-size:.78rem">
+      <i class="bi bi-funnel-fill me-1"></i>Filtro activo
+    </span>
+    {% endif %}
+  </div>
+</form>
+
+{% if not cola %}
+<div class="empty-state" style="padding:4rem">
+  <i class="bi bi-person-x" style="font-size:3rem;opacity:.2;color:var(--primary)"></i>
+  <p class="mt-3 mb-1 fw-600">Sin tareas activas</p>
+  <p class="text-muted">
+    {% if proyecto_sel %}No hay tareas activas para este proyecto.
+    {% else %}Cuando haya entregables asignados a responsables aparecerán aquí.{% endif %}
+  </p>
+</div>
+{% endif %}
+
+<div class="row g-4">
+{% for item in cola %}
+  {% set r = item.responsable %}
+  {% set ents = item.entregables %}
+  <div class="col-12 col-lg-6">
+    <div class="card">
+
+      {# ── Cabecera responsable ── #}
+      <div class="card-header-custom">
+        <div class="d-flex align-items-center gap-2 flex-grow-1">
+          <span style="width:32px;height:32px;border-radius:50%;background:var(--primary-soft);
+                       color:var(--primary);display:flex;align-items:center;justify-content:center;
+                       font-weight:700;font-size:.85rem;flex-shrink:0">
+            {{ r.nombre[:2].upper() }}
+          </span>
+          <div>
+            <a href="{{ url_for('cola_responsable', responsable_id=r.id) }}"
+               class="fw-600 text-decoration-none" style="color:var(--text)">
+              {{ r.nombre }}
+              <i class="bi bi-play-circle ms-1 text-primary" style="font-size:.8rem"
+                 title="Iniciar revisión de cola"></i>
+            </a>
+            {% if r.capacidad_horas_semana %}
+            <div style="font-size:.72rem;color:var(--text-muted)">{{ r.capacidad_horas_semana }}h/semana</div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+          <span class="badge bg-secondary">{{ ents|length }} tarea{{ 's' if ents|length != 1 }}</span>
+          <button class="btn btn-sm btn-primary py-0 save-btn"
+                  data-responsable="{{ r.id }}"
+                  style="display:none">
+            <i class="bi bi-check-lg me-1"></i>Guardar orden
+          </button>
+        </div>
+      </div>
+
+      {# ── Lista agrupada por proyecto ── #}
+      <div class="card-body p-0">
+        {% set ns = namespace(proyecto_actual='__INIT__', contador=0) %}
+        <ul class="sortable-list list-unstyled mb-0" data-responsable="{{ r.id }}">
+          {% for e in ents %}
+
+            {# Separador de proyecto cuando cambia #}
+            {% set proy_nombre = e.proyecto or '' %}
+            {% if proy_nombre != ns.proyecto_actual %}
+              {% set ns.proyecto_actual = proy_nombre %}
+              {% set ns.contador = 0 %}
+              <li class="proyecto-header d-flex align-items-center gap-2 px-3 py-1"
+                  style="background:var(--surface-2);border-bottom:1px solid var(--border);
+                         font-size:.75rem;font-weight:700;color:var(--text-muted);
+                         text-transform:uppercase;letter-spacing:.05em;pointer-events:none"
+                  data-no-sort>
+                <i class="bi bi-folder-fill" style="color:var(--primary);font-size:.8rem"></i>
+                {{ proy_nombre if proy_nombre else 'Sin proyecto' }}
+              </li>
+            {% endif %}
+            {% set ns.contador = ns.contador + 1 %}
+
+            <li class="sortable-item d-flex align-items-center gap-3 px-3 py-2"
+                data-id="{{ e.id }}"
+                data-proyecto="{{ proy_nombre }}"
+                style="border-bottom:1px solid var(--border);cursor:grab;user-select:none;
+                       transition:background .15s">
+              <span class="text-muted" style="cursor:grab;font-size:1.1rem">
+                <i class="bi bi-grip-vertical"></i>
+              </span>
+              <span class="orden-num fw-700"
+                    style="min-width:22px;text-align:center;font-size:.85rem;color:var(--primary)">
+                {{ loop.index }}
+              </span>
+              <div class="flex-grow-1 min-width-0">
+                <div class="d-flex align-items-center gap-2">
+                  <span class="sem-dot sem-{{ e.semaforo_cliente }}"></span>
+                  <a href="{{ url_for('detalle_entregable', id=e.id) }}"
+                     class="text-decoration-none fw-600 text-truncate"
+                     style="font-size:.875rem;color:var(--text)">
+                    {{ e.nombre }}
+                  </a>
+                </div>
+                <div class="d-flex gap-2 mt-1 flex-wrap">
+                  {% if e.folio %}
+                  <span class="badge-detail badge-secondary" style="font-size:.68rem">{{ e.folio }}</span>
+                  {% endif %}
+                  <span class="badge-detail badge-{% if e.estatus == 'En progreso' %}primary{% elif e.estatus == 'En revisión' %}info{% else %}secondary{% endif %}"
+                        style="font-size:.68rem">{{ e.estatus or 'Borrador' }}</span>
+                  {% if e.fecha_entrega %}
+                  <span class="badge-detail badge-{% if e.va_a_tiempo == 'Atrasado' %}danger{% elif e.va_a_tiempo == 'En riesgo' %}warning{% else %}success{% endif %}"
+                        style="font-size:.68rem">
+                    <i class="bi bi-calendar me-1"></i>{{ e.fecha_entrega }}
+                  </span>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="text-end flex-shrink-0" style="min-width:50px">
+                <div class="fw-600" style="font-size:.85rem;color:{% if (e.porcentaje_avance or 0) >= 80 %}var(--success){% elif (e.porcentaje_avance or 0) >= 40 %}var(--warning){% else %}var(--danger){% endif %}">
+                  {{ e.porcentaje_avance or 0 }}%
+                </div>
+                <div class="progress mt-1" style="height:4px;width:50px;border-radius:99px">
+                  <div class="progress-bar {% if (e.porcentaje_avance or 0) >= 80 %}bg-success{% elif (e.porcentaje_avance or 0) >= 40 %}bg-warning{% else %}bg-danger{% endif %}"
+                       style="width:{{ e.porcentaje_avance or 0 }}%;border-radius:99px"></div>
+                </div>
+              </div>
+            </li>
+
+          {% endfor %}
+        </ul>
+      </div>
+
+    </div>
+  </div>
+{% endfor %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+  const saveStatus = document.getElementById('save-status');
+
+  document.querySelectorAll('.sortable-list').forEach(list => {
+    const respId  = list.dataset.responsable;
+    const saveBtn = list.closest('.card').querySelector('.save-btn');
+
+    Sortable.create(list, {
+      animation: 150,
+      handle: '.bi-grip-vertical',
+      ghostClass: 'sortable-ghost',
+      // Excluir los separadores de proyecto del drag
+      filter: '[data-no-sort]',
+      onEnd() {
+        // Renumerar visualmente solo los sortable-items (no los headers)
+        let i = 1;
+        list.querySelectorAll('.sortable-item').forEach(el => {
+          el.querySelector('.orden-num').textContent = i++;
+        });
+        saveBtn.style.display = '';
+      }
+    });
+
+    saveBtn.addEventListener('click', async () => {
+      // Solo enviar IDs de entregables (no de los headers de proyecto)
+      const ids = [...list.querySelectorAll('.sortable-item')].map(li => parseInt(li.dataset.id));
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Guardando…';
+      try {
+        const res = await fetch('/cola/reordenar', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({responsable_id: parseInt(respId), orden: ids})
+        });
+        if ((await res.json()).ok) {
+          saveBtn.style.display = 'none';
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Guardar orden';
+          saveStatus.textContent = '✓ Orden guardado';
+          setTimeout(() => saveStatus.textContent = '', 3000);
+        }
+      } catch(e) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Guardar orden';
+        saveStatus.textContent = 'Error al guardar';
+      }
+    });
+  });
+</script>
+<style>
+  .sortable-ghost { opacity:.4; background:var(--primary-soft) !important; }
+  .sortable-item:hover { background:var(--surface-secondary); }
+  .sortable-item:active { cursor:grabbing; }
+  .proyecto-header { position:sticky; top:0; z-index:1; }
+</style>
+{% endblock %}
