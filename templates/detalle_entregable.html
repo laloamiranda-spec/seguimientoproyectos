@@ -234,6 +234,142 @@
     </div>
     {% endif %}
 
+    {# ── Casos QA ────────────────────────────────────────────────────── #}
+    <div class="card mb-4" id="qa-tasks">
+      <div class="card-header-custom d-flex align-items-center">
+        <i class="bi bi-clipboard2-check me-2 text-primary"></i>Casos QA
+        {% set qa_total = tareas_qa|length %}
+        {% set qa_pass  = tareas_qa|selectattr('estado','equalto','PASS')|list|length %}
+        {% set qa_fail  = tareas_qa|selectattr('estado','equalto','FAIL')|list|length %}
+        {% set qa_pend  = tareas_qa|selectattr('estado','equalto','Pendiente')|list|length %}
+        <span class="badge bg-secondary ms-2">{{ qa_total }}</span>
+        {% if qa_pass %}<span class="badge ms-1" style="background:#E2EFDA;color:#375623">{{ qa_pass }} PASS</span>{% endif %}
+        {% if qa_fail %}<span class="badge ms-1" style="background:#FCE4D6;color:#7B0000">{{ qa_fail }} FAIL</span>{% endif %}
+        {% if qa_pend %}<span class="badge ms-1 bg-secondary">{{ qa_pend }} Pend.</span>{% endif %}
+        <button class="btn btn-sm btn-outline-primary ms-auto"
+                data-bs-toggle="collapse" data-bs-target="#formNuevaTarea">
+          <i class="bi bi-plus-lg me-1"></i>Agregar caso
+        </button>
+      </div>
+      <div class="card-body p-3">
+
+        {# Formulario nuevo caso #}
+        <div class="collapse mb-3" id="formNuevaTarea">
+          <form method="POST" action="{{ url_for('crear_tarea_qa', id=e.id) }}"
+                class="p-3 rounded border" style="background:var(--surface-secondary)">
+            <div class="row g-2 mb-2">
+              <div class="col-8">
+                <input type="text" name="escenario" class="form-control form-control-sm"
+                       placeholder="Escenario *" required>
+              </div>
+              <div class="col-4">
+                <select name="estado" class="form-select form-select-sm">
+                  <option value="Pendiente">Pendiente</option>
+                  <option value="PASS">PASS</option>
+                  <option value="FAIL">FAIL</option>
+                  <option value="BLOCKED">BLOCKED</option>
+                </select>
+              </div>
+            </div>
+            <div class="row g-2 mb-2">
+              <div class="col-12">
+                <input type="text" name="descripcion" class="form-control form-control-sm"
+                       placeholder="Descripción / Tags (@smoke @critico)">
+              </div>
+            </div>
+            <div class="row g-2 mb-2">
+              <div class="col-4">
+                <textarea name="precondicion" class="form-control form-control-sm" rows="2"
+                          placeholder="GIVEN (precondición)"></textarea>
+              </div>
+              <div class="col-4">
+                <textarea name="accion" class="form-control form-control-sm" rows="2"
+                          placeholder="WHEN (acción)"></textarea>
+              </div>
+              <div class="col-4">
+                <textarea name="resultado_esperado" class="form-control form-control-sm" rows="2"
+                          placeholder="THEN (resultado esperado)"></textarea>
+              </div>
+            </div>
+            <div class="d-flex justify-content-end gap-2">
+              <button type="button" class="btn btn-sm btn-outline-secondary"
+                      data-bs-toggle="collapse" data-bs-target="#formNuevaTarea">Cancelar</button>
+              <button type="submit" class="btn btn-sm btn-primary">
+                <i class="bi bi-plus-lg me-1"></i>Guardar caso
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {# Tabla de casos #}
+        {% if tareas_qa %}
+        <div class="table-responsive">
+          <table class="table table-sm mb-0" style="font-size:.82rem">
+            <thead>
+              <tr style="background:var(--surface-secondary)">
+                <th style="width:30px">#</th>
+                <th>Escenario</th>
+                <th style="width:110px">Estado</th>
+                <th>Resultado obtenido</th>
+                <th style="width:60px"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in tareas_qa %}
+              <tr>
+                <td class="text-muted">{{ loop.index }}</td>
+                <td>
+                  <div class="fw-500">{{ t.escenario }}</div>
+                  {% if t.descripcion %}<div class="text-muted" style="font-size:.75rem">{{ t.descripcion }}</div>{% endif %}
+                  {% if t.accion or t.resultado_esperado %}
+                  <div class="text-muted mt-1" style="font-size:.75rem">
+                    {% if t.accion %}<span class="me-2"><strong>WHEN:</strong> {{ t.accion[:60] }}{% if t.accion|length > 60 %}…{% endif %}</span>{% endif %}
+                    {% if t.resultado_esperado %}<span><strong>THEN:</strong> {{ t.resultado_esperado[:60] }}{% if t.resultado_esperado|length > 60 %}…{% endif %}</span>{% endif %}
+                  </div>
+                  {% endif %}
+                </td>
+                <td>
+                  <form method="POST"
+                        action="{{ url_for('actualizar_resultado_qa', id=e.id, tq_id=t.id) }}">
+                    <input type="hidden" name="resultado_obtenido" value="{{ t.resultado_obtenido or '' }}">
+                    <input type="hidden" name="evidencia" value="{{ t.evidencia or '' }}">
+                    <input type="hidden" name="observaciones" value="{{ t.observaciones or '' }}">
+                    <select name="estado" class="form-select form-select-sm py-0"
+                            onchange="this.form.submit()"
+                            style="font-size:.78rem;
+                            {% if t.estado == 'PASS' %}background:#E2EFDA;color:#375623
+                            {% elif t.estado == 'FAIL' %}background:#FCE4D6;color:#7B0000
+                            {% elif t.estado == 'BLOCKED' %}background:#FFF2CC;color:#7B5C00
+                            {% endif %}">
+                      {% for opt in ['Pendiente','PASS','FAIL','BLOCKED','N/A'] %}
+                      <option value="{{ opt }}" {% if t.estado == opt %}selected{% endif %}>{{ opt }}</option>
+                      {% endfor %}
+                    </select>
+                  </form>
+                </td>
+                <td class="text-muted" style="font-size:.78rem">{{ t.resultado_obtenido or '—' }}</td>
+                <td>
+                  <form method="POST"
+                        action="{{ url_for('eliminar_tarea_qa', id=e.id, tq_id=t.id) }}"
+                        onsubmit="return confirm('¿Eliminar este caso QA?')">
+                    <button class="btn btn-sm btn-link text-danger p-0">
+                      <i class="bi bi-x-lg"></i>
+                    </button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center mb-0" style="font-size:.82rem">
+          <i class="bi bi-clipboard2 me-1"></i>Sin casos QA registrados aún.
+        </p>
+        {% endif %}
+      </div>
+    </div>
+
     {# Seguimiento de horas #}
     <div class="card mb-4">
       <div class="card-header-custom">

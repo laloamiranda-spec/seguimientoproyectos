@@ -148,10 +148,25 @@
     </button>
   </div>
 
+  {# Barra de acciones bulk #}
+  <div id="bulkBar" class="d-none align-items-center gap-3 px-3 py-2 mb-2 rounded border bg-light">
+    <span id="bulkCount" class="fw-600 text-primary"></span>
+    <form id="bulkQAForm" method="POST" action="{{ url_for('qa_layout_bulk') }}">
+      <input type="hidden" name="ids" id="bulkIds">
+      <button type="submit" class="btn btn-outline-success btn-sm">
+        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Layout QA seleccionados
+      </button>
+    </form>
+    <button id="clearSelection" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-x-lg me-1"></i>Limpiar selección
+    </button>
+  </div>
+
   <div class="table-responsive">
     <table class="table mb-0" id="entregablesTable">
       <thead>
         <tr>
+          <th style="width:36px"><input type="checkbox" id="selectAll" class="form-check-input" title="Seleccionar todos"></th>
           <th data-col="folio" class="sortable">Folio <i class="bi bi-chevron-expand sort-icon"></i></th>
           <th data-col="nombre" class="sortable">Nombre <i class="bi bi-chevron-expand sort-icon"></i></th>
           <th data-col="fecha_entrega" class="sortable">Entrega <i class="bi bi-chevron-expand sort-icon"></i></th>
@@ -176,6 +191,7 @@
             data-proyecto="{{ e.proyecto or '' }}"
             data-devops="{{ '1' if e.necesita_devops else '0' }}"
             data-fecha="{{ e.fecha_entrega or '' }}">
+          <td><input type="checkbox" class="form-check-input row-check" data-id="{{ e.id }}"></td>
           <td><span class="fw-600 text-primary-custom">{{ e.folio or '—' }}</span></td>
           <td>
             <div class="fw-500">{{ e.nombre }}</div>
@@ -403,6 +419,49 @@
   // Init
   filtered = [...allRows];
   render();
+})();
+
+// ── Selección bulk ────────────────────────────────────────────────────────
+(function() {
+  const bulkBar   = document.getElementById('bulkBar');
+  const bulkCount = document.getElementById('bulkCount');
+  const bulkIds   = document.getElementById('bulkIds');
+  const selectAll = document.getElementById('selectAll');
+
+  function getChecked() {
+    return Array.from(document.querySelectorAll('.row-check:checked'));
+  }
+
+  function updateBar() {
+    const checked = getChecked();
+    if (checked.length > 0) {
+      bulkBar.classList.remove('d-none');
+      bulkBar.classList.add('d-flex');
+      bulkCount.textContent = checked.length + ' entregable' + (checked.length > 1 ? 's' : '') + ' seleccionado' + (checked.length > 1 ? 's' : '');
+      bulkIds.value = checked.map(cb => cb.dataset.id).join(',');
+    } else {
+      bulkBar.classList.add('d-none');
+      bulkBar.classList.remove('d-flex');
+    }
+  }
+
+  document.getElementById('tableBody').addEventListener('change', function(e) {
+    if (e.target.classList.contains('row-check')) updateBar();
+  });
+
+  selectAll.addEventListener('change', function() {
+    // solo afecta filas visibles
+    document.querySelectorAll('#tableBody tr:not(.d-none) .row-check').forEach(cb => {
+      cb.checked = selectAll.checked;
+    });
+    updateBar();
+  });
+
+  document.getElementById('clearSelection').addEventListener('click', function() {
+    document.querySelectorAll('.row-check').forEach(cb => cb.checked = false);
+    selectAll.checked = false;
+    updateBar();
+  });
 })();
 </script>
 {% endblock %}

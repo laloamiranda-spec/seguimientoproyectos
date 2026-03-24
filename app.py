@@ -224,6 +224,20 @@ CREATE TABLE IF NOT EXISTS comentarios (
     comentario     TEXT    NOT NULL,
     fecha          TEXT    NOT NULL
 );
+CREATE TABLE IF NOT EXISTS tareas_qa (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    entregable_id      INTEGER NOT NULL REFERENCES entregables(id) ON DELETE CASCADE,
+    escenario          TEXT NOT NULL,
+    descripcion        TEXT,
+    precondicion       TEXT,
+    accion             TEXT,
+    resultado_esperado TEXT,
+    resultado_obtenido TEXT,
+    estado             TEXT DEFAULT 'Pendiente',
+    evidencia          TEXT,
+    observaciones      TEXT,
+    creado_en          TEXT DEFAULT (datetime('now'))
+);
 '''
 
 SQLITE_MIGRATIONS = [
@@ -369,6 +383,51 @@ def update_entregable(id, payload):
 
 def delete_entregable(id):
     execute('DELETE FROM entregables WHERE id = %s', (id,))
+
+
+# ── Tareas QA ─────────────────────────────────────────────────────────────────
+
+def get_tareas_qa(entregable_id):
+    return fetchall(
+        f'SELECT * FROM tareas_qa WHERE entregable_id = {p()} ORDER BY id ASC',
+        (entregable_id,)
+    )
+
+
+def create_tarea_qa(entregable_id, payload):
+    execute(
+        f'''INSERT INTO tareas_qa
+            (entregable_id, escenario, descripcion, precondicion, accion,
+             resultado_esperado, estado)
+            VALUES ({ph(7)})''',
+        (entregable_id,
+         payload.get('escenario', ''),
+         payload.get('descripcion', ''),
+         payload.get('precondicion', ''),
+         payload.get('accion', ''),
+         payload.get('resultado_esperado', ''),
+         payload.get('estado', 'Pendiente'))
+    )
+
+
+def update_tarea_qa(tq_id, entregable_id, payload):
+    execute(
+        f'''UPDATE tareas_qa SET
+            resultado_obtenido={p()}, estado={p()}, evidencia={p()}, observaciones={p()}
+            WHERE id={p()} AND entregable_id={p()}''',
+        (payload.get('resultado_obtenido', ''),
+         payload.get('estado', 'Pendiente'),
+         payload.get('evidencia', ''),
+         payload.get('observaciones', ''),
+         tq_id, entregable_id)
+    )
+
+
+def delete_tarea_qa(tq_id, entregable_id):
+    execute(
+        f'DELETE FROM tareas_qa WHERE id={p()} AND entregable_id={p()}',
+        (tq_id, entregable_id)
+    )
 
 
 def insert_comment(entregable_id, comentario):
@@ -768,10 +827,12 @@ def detalle_entregable(id):
         resp_row = fetchone("SELECT nombre FROM responsables WHERE id = %s", (cola_resp_id,))
         cola_resp_nombre = resp_row['nombre'] if resp_row else None
 
+    tareas_qa = get_tareas_qa(id)
     return render_template('detalle_entregable.html', e=e, comentarios=comentarios,
                            estado=estado, sugerida=sugerida,
                            now=datetime.now(),
                            registros_trabajo=registros_trabajo,
+                           tareas_qa=tareas_qa,
                            horas_estimadas=horas_estimadas,
                            horas_registradas=horas_registradas,
                            horas_restantes=horas_restantes,
@@ -1930,301 +1991,276 @@ def cargar_layout():
 
 
 # =============================================================================
+#  Tareas QA — CRUD
+# =============================================================================
+
+@app.route('/entregables/<int:id>/tareas-qa', methods=['POST'])
+@login_required
+def crear_tarea_qa(id):
+    if not get_entregable_by_id(id):
+        abort(404)
+    create_tarea_qa(id, request.form)
+    return redirect(url_for('detalle_entregable', id=id) + '#qa-tasks')
+
+
+@app.route('/entregables/<int:id>/tareas-qa/<int:tq_id>/resultado', methods=['POST'])
+@login_required
+def actualizar_resultado_qa(id, tq_id):
+    update_tarea_qa(tq_id, id, request.form)
+    return redirect(url_for('detalle_entregable', id=id) + '#qa-tasks')
+
+
+@app.route('/entregables/<int:id>/tareas-qa/<int:tq_id>/eliminar', methods=['POST'])
+@login_required
+def eliminar_tarea_qa(id, tq_id):
+    delete_tarea_qa(tq_id, id)
+    return redirect(url_for('detalle_entregable', id=id) + '#qa-tasks')
+
+
+# =============================================================================
 #  Layout QA para Azure DevOps
 # =============================================================================
 
-@app.route('/entregables/<int:id>/qa-layout')
-@login_required
-def descargar_qa_layout(id):
-    import io
-    from openpyxl import Workbook
-    from openpyxl.styles import (Font, PatternFill, Alignment, Border, Side,
-                                  numbers)
-    from openpyxl.utils import get_column_letter
-    from openpyxl.worksheet.datavalidation import DataValidation
-
-    e = get_entregable_by_id(id)
-    if not e:
-        abort(404)
-
-    # Enriquecer responsable y división
+def _enrich_for_qa(e):
+    """Agrega responsable y división al dict de un entregable."""
     responsables = {r['id']: r['nombre'] for r in get_catalog_responsables()}
     divisiones   = {d['id']: d['nombre'] for d in get_catalog_divisiones()}
     e['responsable'] = responsables.get(e.get('responsable_id'), '')
     e['division']    = divisiones.get(e.get('division_id'), '')
+    return e
 
-    wb = Workbook()
 
-    # ── Paleta de colores ──────────────────────────────────────────────────
-    AZUL_OSC  = '1F3864'   # encabezados principales
-    AZUL_MED  = '2E75B6'   # sub-encabezados
-    AZUL_CLAR = 'D6E4F0'   # filas pares / fondo suave
-    VERDE     = '375623'   # PASS
-    ROJO      = '7B0000'   # FAIL
-    AMARILLO  = 'FFF2CC'   # BLOCKED
+def _build_qa_sheets(wb, e, tareas):
+    """Agrega dos hojas (Plan QA + ADO Import) al workbook para un entregable."""
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    AZUL_OSC  = '1F3864'
+    AZUL_MED  = '2E75B6'
+    AZUL_CLAR = 'D6E4F0'
     GRIS      = 'F2F2F2'
     BLANCO    = 'FFFFFF'
+    VERDE_BG  = 'E2EFDA'
+    ROJO_BG   = 'FCE4D6'
+    AMARILLO_BG = 'FFF2CC'
 
-    thin = Side(style='thin', color='BFBFBF')
+    thin  = Side(style='thin', color='BFBFBF')
     borde = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    def header_font(size=11, bold=True, color=BLANCO):
-        return Font(name='Calibri', size=size, bold=bold, color=color)
+    def hf(size=11, color=BLANCO):
+        return Font(name='Calibri', size=size, bold=True, color=color)
 
-    def cell_font(size=10, bold=False, color='000000'):
+    def cf(size=10, bold=False, color='000000'):
         return Font(name='Calibri', size=size, bold=bold, color=color)
 
     def fill(hex_color):
         return PatternFill('solid', fgColor=hex_color)
 
-    def wrap(horizontal='left', vertical='center', wrap=True):
-        return Alignment(horizontal=horizontal, vertical=vertical, wrap_text=wrap)
+    def al(h='left', v='center', wrap=True):
+        return Alignment(horizontal=h, vertical=v, wrap_text=wrap)
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  HOJA 1 — Plan QA
-    # ══════════════════════════════════════════════════════════════════════
-    ws = wb.active
-    ws.title = 'Plan QA'
+    folio_safe = (e.get('folio') or str(e.get('id', 'QA')))[:25].replace('/', '-')
+
+    # ── Hoja Plan QA ─────────────────────────────────────────────────────
+    ws = wb.create_sheet(f'{folio_safe} - Plan QA')
     ws.sheet_view.showGridLines = False
-
-    # Ancho de columnas
-    col_widths = [4, 28, 35, 18, 38, 42, 42, 20, 16, 30]
-    for i, w in enumerate(col_widths, 1):
+    for i, w in enumerate([4, 28, 30, 18, 35, 38, 38, 20, 16, 28], 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
     row = 1
-
-    # ── Título ────────────────────────────────────────────────────────────
     ws.merge_cells(f'A{row}:J{row}')
     c = ws.cell(row=row, column=1, value='QA Testing Document — DaltonSoft')
     c.font = Font(name='Calibri', size=16, bold=True, color=BLANCO)
-    c.fill = fill(AZUL_OSC)
-    c.alignment = wrap('center')
+    c.fill = fill(AZUL_OSC); c.alignment = al('center')
     ws.row_dimensions[row].height = 32
     row += 1
 
-    # ── Encabezado del entregable ─────────────────────────────────────────
-    meta_fields = [
+    for label, value in [
         ('Entregable / SP', e.get('nombre') or ''),
         ('Folio',           e.get('folio') or ''),
         ('División',        e.get('division') or ''),
         ('Responsable',     e.get('responsable') or ''),
         ('Estatus',         e.get('estatus') or ''),
         ('Fecha',           date.today().strftime('%d/%m/%Y')),
-    ]
-    for label, value in meta_fields:
+    ]:
         ws.merge_cells(f'A{row}:C{row}')
         c = ws.cell(row=row, column=1, value=label)
-        c.font = Font(name='Calibri', size=10, bold=True, color='000000')
-        c.fill = fill(AZUL_CLAR)
-        c.alignment = wrap('right')
-        c.border = borde
-
+        c.font = cf(bold=True); c.fill = fill(AZUL_CLAR)
+        c.alignment = al('right'); c.border = borde
         ws.merge_cells(f'D{row}:J{row}')
         c = ws.cell(row=row, column=4, value=value)
-        c.font = cell_font(size=10)
-        c.alignment = wrap()
-        c.border = borde
+        c.font = cf(); c.alignment = al(); c.border = borde
         row += 1
 
     row += 1  # espacio
 
-    # ── Contexto del cambio ───────────────────────────────────────────────
+    # Contexto
     ws.merge_cells(f'A{row}:J{row}')
     c = ws.cell(row=row, column=1, value='CONTEXTO DEL CAMBIO')
-    c.font = header_font(size=11)
-    c.fill = fill(AZUL_MED)
-    c.alignment = wrap('center')
-    c.border = borde
-    ws.row_dimensions[row].height = 22
-    row += 1
-
+    c.font = hf(); c.fill = fill(AZUL_MED); c.alignment = al('center'); c.border = borde
+    ws.row_dimensions[row].height = 22; row += 1
     ws.merge_cells(f'A{row}:J{row}')
     c = ws.cell(row=row, column=1, value=e.get('descripcion') or '')
-    c.font = cell_font(size=10)
-    c.alignment = wrap()
-    c.border = borde
-    ws.row_dimensions[row].height = 60
-    row += 2
+    c.font = cf(); c.alignment = al(); c.border = borde
+    ws.row_dimensions[row].height = 55; row += 2
 
-    # ── Criterios de aceptación ───────────────────────────────────────────
+    # Criterios
     ws.merge_cells(f'A{row}:J{row}')
     c = ws.cell(row=row, column=1, value='CRITERIOS DE ACEPTACIÓN')
-    c.font = header_font(size=11)
-    c.fill = fill(AZUL_MED)
-    c.alignment = wrap('center')
-    c.border = borde
-    ws.row_dimensions[row].height = 22
-    row += 1
-
-    # Encabezado criterios: 5 columnas simples (sin merges complejos)
-    crit_headers = ['#', 'Criterio', 'Estado Esperado', 'Estado Obtenido', 'Observaciones']
-    crit_widths  = [4, 40, 20, 20, 30]
-    for ci, (h, w) in enumerate(zip(crit_headers, crit_widths), 1):
+    c.font = hf(); c.fill = fill(AZUL_MED); c.alignment = al('center'); c.border = borde
+    ws.row_dimensions[row].height = 22; row += 1
+    for ci, (h, w) in enumerate(zip(
+        ['#', 'Criterio', 'Estado Esperado', 'Estado Obtenido', 'Observaciones'],
+        [4, 42, 22, 22, 28]), 1):
         c = ws.cell(row=row, column=ci, value=h)
-        c.font = header_font(size=10)
-        c.fill = fill(AZUL_OSC)
-        c.alignment = wrap('center')
-        c.border = borde
-        ws.column_dimensions[get_column_letter(ci)].width = w
-    # Columnas F-J vacías en encabezado
+        c.font = hf(size=10); c.fill = fill(AZUL_OSC)
+        c.alignment = al('center'); c.border = borde
     for ci in range(6, 11):
-        c = ws.cell(row=row, column=ci)
-        c.fill = fill(AZUL_OSC)
-        c.border = borde
+        ws.cell(row=row, column=ci).fill = fill(AZUL_OSC)
+        ws.cell(row=row, column=ci).border = borde
     row += 1
-
     for i in range(1, 6):
         bg = AZUL_CLAR if i % 2 == 0 else BLANCO
         for ci in range(1, 11):
             c = ws.cell(row=row, column=ci)
-            c.fill = fill(bg)
-            c.border = borde
-            c.font = cell_font(size=10)
-            c.alignment = wrap()
-        ws.cell(row=row, column=1, value=i).alignment = wrap('center')
-        ws.row_dimensions[row].height = 20
-        row += 1
+            c.fill = fill(bg); c.border = borde; c.font = cf(); c.alignment = al()
+        ws.cell(row=row, column=1, value=i).alignment = al('center')
+        ws.row_dimensions[row].height = 20; row += 1
     row += 1
 
-    # ── Casos de prueba ────────────────────────────────────────────────────
+    # Casos de prueba
     ws.merge_cells(f'A{row}:J{row}')
     c = ws.cell(row=row, column=1, value='CASOS DE PRUEBA')
-    c.font = header_font(size=11)
-    c.fill = fill(AZUL_MED)
-    c.alignment = wrap('center')
-    c.border = borde
-    ws.row_dimensions[row].height = 22
-    row += 1
+    c.font = hf(); c.fill = fill(AZUL_MED); c.alignment = al('center'); c.border = borde
+    ws.row_dimensions[row].height = 22; row += 1
 
-    cp_headers = ['#', 'Escenario', 'Descripción / Tags', 'Precondiciones\n(GIVEN)',
-                  'Acción\n(WHEN)', 'Resultado Esperado\n(THEN)',
+    cp_headers = ['#', 'Escenario', 'Descripción / Tags', 'Precondición (GIVEN)',
+                  'Acción (WHEN)', 'Resultado Esperado (THEN)',
                   'Resultado Obtenido', 'Estado', 'Evidencia', 'Observaciones']
-    for col_idx, header in enumerate(cp_headers, 1):
-        c = ws.cell(row=row, column=col_idx, value=header)
-        c.font = header_font(size=10)
-        c.fill = fill(AZUL_OSC)
-        c.alignment = wrap('center')
-        c.border = borde
+    for ci, h in enumerate(cp_headers, 1):
+        c = ws.cell(row=row, column=ci, value=h)
+        c.font = hf(size=10); c.fill = fill(AZUL_OSC)
+        c.alignment = al('center'); c.border = borde
     ws.row_dimensions[row].height = 36
-    cp_header_row = row
+    cp_header_row = row; row += 1
+
+    dv = DataValidation(type='list', formula1='"PASS,FAIL,BLOCKED,N/A,Pendiente"',
+                        showDropDown=False)
+    ws.add_data_validation(dv)
+    cp_first = row
+
+    estado_bg = {'PASS': VERDE_BG, 'FAIL': ROJO_BG, 'BLOCKED': AMARILLO_BG}
+
+    if tareas:
+        for i, t in enumerate(tareas, 1):
+            bg = AZUL_CLAR if i % 2 == 0 else BLANCO
+            est = t.get('estado') or 'Pendiente'
+            row_bg = estado_bg.get(est, bg)
+            vals = [i, t.get('escenario',''), t.get('descripcion',''),
+                    t.get('precondicion',''), t.get('accion',''),
+                    t.get('resultado_esperado',''), t.get('resultado_obtenido',''),
+                    est, t.get('evidencia',''), t.get('observaciones','')]
+            for ci, v in enumerate(vals, 1):
+                c = ws.cell(row=row, column=ci, value=v)
+                c.fill = fill(row_bg); c.border = borde
+                c.font = cf(); c.alignment = al()
+            ws.cell(row=row, column=1).alignment = al('center')
+            ws.row_dimensions[row].height = 40; row += 1
+    else:
+        for i in range(1, 6):
+            bg = AZUL_CLAR if i % 2 == 0 else BLANCO
+            for ci in range(1, 11):
+                c = ws.cell(row=row, column=ci)
+                c.fill = fill(bg); c.border = borde; c.font = cf(); c.alignment = al()
+            ws.cell(row=row, column=1, value=i).alignment = al('center')
+            ws.row_dimensions[row].height = 40; row += 1
+
+    dv.sqref = f'H{cp_first}:H{row - 1}'
     row += 1
 
-    # Validación: Estado (PASS / FAIL / BLOCKED / N/A)
-    dv_estado = DataValidation(
-        type='list',
-        formula1='"PASS,FAIL,BLOCKED,N/A"',
-        showDropDown=False,
-        showErrorMessage=True,
-        error='Usa: PASS, FAIL, BLOCKED o N/A',
-        errorTitle='Valor inválido'
-    )
-    ws.add_data_validation(dv_estado)
-
-    cp_first_data_row = row
-    for i in range(1, 11):
-        bg = AZUL_CLAR if i % 2 == 0 else BLANCO
-        for col in range(1, 11):
-            c = ws.cell(row=row, column=col)
-            c.fill = fill(bg)
-            c.border = borde
-            c.font = cell_font(size=10)
-            c.alignment = wrap()
-        ws.cell(row=row, column=1, value=i)
-        ws.cell(row=row, column=1).alignment = wrap('center')
-        ws.row_dimensions[row].height = 40
-        row += 1
-
-    # Validación de lista en columna H (Estado)
-    dv_estado.sqref = f'H{cp_first_data_row}:H{row - 1}'
-
-    row += 1
-
-    # ── Notas QA ──────────────────────────────────────────────────────────
     ws.merge_cells(f'A{row}:J{row}')
     c = ws.cell(row=row, column=1, value='NOTAS PARA EL EQUIPO DE QA')
-    c.font = header_font(size=11)
-    c.fill = fill(AZUL_MED)
-    c.alignment = wrap('center')
-    c.border = borde
-    ws.row_dimensions[row].height = 22
-    row += 1
-
-    notas = [
-        '1. Documentar el conteo de registros totales vs. registros con valor como evidencia.',
-        '2. Completar la columna "Estado" con: PASS, FAIL, BLOCKED o N/A.',
-        '3. Adjuntar capturas de pantalla en la columna "Evidencia" (nombre del archivo o URL).',
-        '4. Si se detecta algún FAIL, escalar inmediatamente al equipo de desarrollo.',
-        '5. Una vez validado en pruebas, replicar en los demás ambientes.',
-    ]
-    for nota in notas:
+    c.font = hf(); c.fill = fill(AZUL_MED); c.alignment = al('center'); c.border = borde
+    ws.row_dimensions[row].height = 22; row += 1
+    for nota in [
+        '1. Completar la columna "Estado" con: PASS, FAIL, BLOCKED o N/A.',
+        '2. Documentar evidencia (nombre de archivo o URL de captura).',
+        '3. Si se detecta algún FAIL, escalar al equipo de desarrollo.',
+        '4. Una vez validado en pruebas, replicar en los demás ambientes.',
+    ]:
         ws.merge_cells(f'A{row}:J{row}')
         c = ws.cell(row=row, column=1, value=nota)
-        c.font = cell_font(size=10)
-        c.fill = fill(GRIS)
-        c.alignment = wrap()
-        c.border = borde
-        ws.row_dimensions[row].height = 18
-        row += 1
+        c.font = cf(); c.fill = fill(GRIS); c.alignment = al(); c.border = borde
+        ws.row_dimensions[row].height = 18; row += 1
 
-    # Freeze encabezado de casos de prueba
     ws.freeze_panes = f'A{cp_header_row + 1}'
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  HOJA 2 — Azure DevOps Import
-    # ══════════════════════════════════════════════════════════════════════
-    ws2 = wb.create_sheet('ADO Import')
+    # ── Hoja ADO Import ──────────────────────────────────────────────────
+    ws2 = wb.create_sheet(f'{folio_safe} - ADO')
     ws2.sheet_view.showGridLines = False
-
-    ado_note = ('Importa esta hoja en Azure DevOps: Boards → Work Items → '
-                'Import Work Items → selecciona este Excel. '
-                'Cada fila = un Test Case. Llena "Title", "Tags" y "Description" antes de importar.')
+    ado_note = ('Azure DevOps: Boards → Work Items → Import Work Items → selecciona este Excel. '
+                'Cada fila = un Test Case.')
     ws2.merge_cells('A1:K1')
     c = ws2.cell(row=1, column=1, value=ado_note)
     c.font = Font(name='Calibri', size=9, italic=True, color='595959')
     c.alignment = Alignment(wrap_text=True, vertical='center')
-    ws2.row_dimensions[1].height = 36
+    ws2.row_dimensions[1].height = 30
 
-    ado_headers = [
-        'ID', 'Work Item Type', 'Title', 'State', 'Priority',
-        'Tags', 'Area Path', 'Iteration Path', 'Assigned To',
-        'Description', 'Steps (Acción → Resultado Esperado)',
-    ]
-    ado_col_widths = [8, 16, 40, 14, 10, 22, 22, 22, 22, 40, 60]
-    for i, (h, w) in enumerate(zip(ado_headers, ado_col_widths), 1):
+    ado_headers = ['ID', 'Work Item Type', 'Title', 'State', 'Priority',
+                   'Tags', 'Area Path', 'Iteration Path', 'Assigned To',
+                   'Description', 'Steps (Acción → Resultado Esperado)']
+    for i, (h, w) in enumerate(zip(ado_headers,
+                                   [8, 16, 40, 14, 10, 22, 22, 22, 22, 40, 60]), 1):
         c = ws2.cell(row=2, column=i, value=h)
-        c.font = header_font(size=10)
-        c.fill = fill(AZUL_OSC)
-        c.alignment = wrap('center')
-        c.border = borde
+        c.font = hf(size=10); c.fill = fill(AZUL_OSC)
+        c.alignment = al('center'); c.border = borde
         ws2.column_dimensions[get_column_letter(i)].width = w
 
-    # 10 filas de ejemplo pre-rellenas con defaults
-    for i in range(3, 13):
-        bg = AZUL_CLAR if i % 2 == 0 else BLANCO
+    data_rows = tareas if tareas else [{}] * 5
+    for idx, t in enumerate(data_rows, 3):
+        bg = AZUL_CLAR if idx % 2 == 0 else BLANCO
+        steps = ''
+        if t:
+            parts = []
+            if t.get('accion'): parts.append(f"WHEN: {t['accion']}")
+            if t.get('resultado_esperado'): parts.append(f"THEN: {t['resultado_esperado']}")
+            steps = ' → '.join(parts)
         defaults = {
             2: 'Test Case',
-            3: f'[Escenario {i-2}] {e.get("nombre") or ""}',
+            3: t.get('escenario', '') if t else f'[Escenario {idx-2}] {e.get("nombre","")}'.strip(),
             4: 'Active',
             5: 2,
-            6: '@qa @pendiente',
-            7: '',
-            8: '',
+            6: t.get('descripcion', '@qa') if t else '@qa @pendiente',
             9: e.get('responsable') or '',
-            10: e.get('descripcion') or '',
-            11: 'WHEN: [acción] → THEN: [resultado esperado]',
+            10: t.get('precondicion', '') if t else (e.get('descripcion') or ''),
+            11: steps or 'WHEN: [acción] → THEN: [resultado esperado]',
         }
         for col in range(1, 12):
-            c = ws2.cell(row=i, column=col, value=defaults.get(col, ''))
-            c.fill = fill(bg)
-            c.border = borde
-            c.font = cell_font(size=10)
-            c.alignment = Alignment(wrap_text=True, vertical='center')
-        ws2.row_dimensions[i].height = 30
+            c = ws2.cell(row=idx, column=col, value=defaults.get(col, ''))
+            c.fill = fill(bg); c.border = borde
+            c.font = cf(); c.alignment = Alignment(wrap_text=True, vertical='center')
+        ws2.row_dimensions[idx].height = 30
 
     ws2.freeze_panes = 'A3'
 
-    # ── Serializar y enviar ────────────────────────────────────────────────
+
+@app.route('/entregables/<int:id>/qa-layout')
+@login_required
+def descargar_qa_layout(id):
+    import io
+    from openpyxl import Workbook
+
+    e = get_entregable_by_id(id)
+    if not e:
+        abort(404)
+    _enrich_for_qa(e)
+    tareas = get_tareas_qa(id)
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    _build_qa_sheets(wb, e, tareas)
+
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
@@ -2232,13 +2268,51 @@ def descargar_qa_layout(id):
     folio = (e.get('folio') or str(id)).replace('/', '-')
     nombre_corto = (e.get('nombre') or 'entregable')[:25].replace(' ', '_')
     filename = f'QA_{folio}_{nombre_corto}.xlsx'
+    return send_file(output, download_name=filename, as_attachment=True,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
-    return send_file(
-        output,
-        download_name=filename,
-        as_attachment=True,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
+
+@app.route('/entregables/qa-layout-bulk', methods=['POST'])
+@login_required
+def qa_layout_bulk():
+    import io
+    from openpyxl import Workbook
+
+    ids_raw = request.form.get('ids', '')
+    try:
+        ids = [int(x) for x in ids_raw.split(',') if x.strip().isdigit()]
+    except Exception:
+        ids = []
+    if not ids:
+        flash('Selecciona al menos un entregable.', 'warning')
+        return redirect(url_for('entregables'))
+
+    responsables = {r['id']: r['nombre'] for r in get_catalog_responsables()}
+    divisiones   = {d['id']: d['nombre'] for d in get_catalog_divisiones()}
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    for eid in ids:
+        e = get_entregable_by_id(eid)
+        if not e:
+            continue
+        e['responsable'] = responsables.get(e.get('responsable_id'), '')
+        e['division']    = divisiones.get(e.get('division_id'), '')
+        tareas = get_tareas_qa(eid)
+        _build_qa_sheets(wb, e, tareas)
+
+    if not wb.worksheets:
+        flash('No se encontraron entregables válidos.', 'warning')
+        return redirect(url_for('entregables'))
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    from datetime import date as _date
+    filename = f'QA_Bulk_{_date.today().strftime("%Y%m%d")}.xlsx'
+    return send_file(output, download_name=filename, as_attachment=True,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 if __name__ == '__main__':
