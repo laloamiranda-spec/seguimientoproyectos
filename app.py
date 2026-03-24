@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, jsonify, abort
 import io
 from flask_login import (LoginManager, UserMixin, login_user, logout_user,
                          login_required, current_user)
@@ -74,7 +74,9 @@ _PG_CONNECT_KWARGS = dict(
 
 def _new_pg_conn():
     """Crea una conexión fresca a Neon con keepalives habilitados."""
-    return psycopg2.connect(DATABASE_URL, **_PG_CONNECT_KWARGS)
+    conn = psycopg2.connect(DATABASE_URL, **_PG_CONNECT_KWARGS)
+    conn.autocommit = True   # cada comando es independiente; evita InFailedSqlTransaction
+    return conn
 
 
 def get_pg_conn():
@@ -151,13 +153,11 @@ def _pg_execute(sql, params):
             conn = get_pg_conn()
             with conn.cursor() as cur:
                 cur.execute(sql, params)
-            conn.commit()
-            return
+            return   # autocommit — no se necesita commit explícito
         except psycopg2.OperationalError:
             from flask import g
             try:
                 if hasattr(g, '_pg_conn') and g._pg_conn:
-                    g._pg_conn.rollback()
                     g._pg_conn.close()
             except Exception:
                 pass
@@ -165,10 +165,6 @@ def _pg_execute(sql, params):
             if intento == 1:
                 raise
         except Exception:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
             raise
 
 
