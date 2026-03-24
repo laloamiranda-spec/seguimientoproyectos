@@ -72,17 +72,30 @@ _PG_CONNECT_KWARGS = dict(
 #  Capa de conexión — abstrae PostgreSQL (Neon) vs SQLite (local)
 # =============================================================================
 
-def get_pg_conn():
+def _new_pg_conn():
     """Crea una conexión fresca a Neon con keepalives habilitados."""
     return psycopg2.connect(DATABASE_URL, **_PG_CONNECT_KWARGS)
 
 
-def put_pg_conn(conn):
-    """Cierra la conexión (sin pool — Neon gestiona pooling por su lado)."""
-    try:
-        conn.close()
-    except Exception:
-        pass
+def get_pg_conn():
+    """Devuelve la conexión del request actual; la crea si no existe todavía."""
+    from flask import g
+    if not hasattr(g, '_pg_conn') or g._pg_conn is None or g._pg_conn.closed:
+        g._pg_conn = _new_pg_conn()
+    return g._pg_conn
+
+
+@app.teardown_appcontext
+def close_pg_conn(exc):
+    """Cierra la conexión al terminar cada request."""
+    from flask import g
+    conn = getattr(g, '_pg_conn', None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        g._pg_conn = None
 
 
 def get_sqlite_conn():
@@ -93,48 +106,62 @@ def get_sqlite_conn():
 
 
 def _pg_fetchall(sql, params):
-    """SELECT con reconexión automática si la conexión SSL fue cerrada por Neon."""
+    """SELECT — reutiliza la conexión del request; reconecta si falla."""
     for intento in range(2):
-        conn = get_pg_conn()
         try:
+            conn = get_pg_conn()
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(sql, params)
                 return [dict(r) for r in cur.fetchall()]
         except psycopg2.OperationalError:
+            from flask import g
+            try:
+                if hasattr(g, '_pg_conn') and g._pg_conn:
+                    g._pg_conn.close()
+            except Exception:
+                pass
+            g._pg_conn = None
             if intento == 1:
-                raise          # falla definitiva en el 2.º intento
-        finally:
-            put_pg_conn(conn)
+                raise
 
 
 def _pg_fetchone(sql, params):
     for intento in range(2):
-        conn = get_pg_conn()
         try:
+            conn = get_pg_conn()
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(sql, params)
                 row = cur.fetchone()
                 return dict(row) if row else None
         except psycopg2.OperationalError:
+            from flask import g
+            try:
+                if hasattr(g, '_pg_conn') and g._pg_conn:
+                    g._pg_conn.close()
+            except Exception:
+                pass
+            g._pg_conn = None
             if intento == 1:
                 raise
-        finally:
-            put_pg_conn(conn)
 
 
 def _pg_execute(sql, params):
     for intento in range(2):
-        conn = get_pg_conn()
         try:
+            conn = get_pg_conn()
             with conn.cursor() as cur:
                 cur.execute(sql, params)
             conn.commit()
             return
         except psycopg2.OperationalError:
+            from flask import g
             try:
-                conn.rollback()
+                if hasattr(g, '_pg_conn') and g._pg_conn:
+                    g._pg_conn.rollback()
+                    g._pg_conn.close()
             except Exception:
                 pass
+            g._pg_conn = None
             if intento == 1:
                 raise
         except Exception:
@@ -143,8 +170,6 @@ def _pg_execute(sql, params):
             except Exception:
                 pass
             raise
-        finally:
-            put_pg_conn(conn)
 
 
 def fetchall(sql, params=()):
@@ -1940,6 +1965,314 @@ def cargar_layout():
         flash('El archivo no contiene filas de datos.', 'warning')
 
     return redirect(url_for('entregables'))
+
+
+# =============================================================================
+#  Layout QA para Azure DevOps
+# =============================================================================
+
+@app.route('/entregables/<int:id>/qa-layout')
+@login_required
+def descargar_qa_layout(id):
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import (Font, PatternFill, Alignment, Border, Side,
+                                  numbers)
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    e = get_entregable_by_id(id)
+    if not e:
+        abort(404)
+
+    # Enriquecer responsable y división
+    responsables = {r['id']: r['nombre'] for r in get_catalog_responsables()}
+    divisiones   = {d['id']: d['nombre'] for d in get_catalog_divisiones()}
+    e['responsable'] = responsables.get(e.get('responsable_id'), '')
+    e['division']    = divisiones.get(e.get('division_id'), '')
+
+    wb = Workbook()
+
+    # ── Paleta de colores ──────────────────────────────────────────────────
+    AZUL_OSC  = '1F3864'   # encabezados principales
+    AZUL_MED  = '2E75B6'   # sub-encabezados
+    AZUL_CLAR = 'D6E4F0'   # filas pares / fondo suave
+    VERDE     = '375623'   # PASS
+    ROJO      = '7B0000'   # FAIL
+    AMARILLO  = 'FFF2CC'   # BLOCKED
+    GRIS      = 'F2F2F2'
+    BLANCO    = 'FFFFFF'
+
+    thin = Side(style='thin', color='BFBFBF')
+    borde = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def header_font(size=11, bold=True, color=BLANCO):
+        return Font(name='Calibri', size=size, bold=bold, color=color)
+
+    def cell_font(size=10, bold=False, color='000000'):
+        return Font(name='Calibri', size=size, bold=bold, color=color)
+
+    def fill(hex_color):
+        return PatternFill('solid', fgColor=hex_color)
+
+    def wrap(horizontal='left', vertical='center', wrap=True):
+        return Alignment(horizontal=horizontal, vertical=vertical, wrap_text=wrap)
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  HOJA 1 — Plan QA
+    # ══════════════════════════════════════════════════════════════════════
+    ws = wb.active
+    ws.title = 'Plan QA'
+    ws.sheet_view.showGridLines = False
+
+    # Ancho de columnas
+    col_widths = [4, 28, 35, 18, 38, 42, 42, 20, 16, 30]
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    row = 1
+
+    # ── Título ────────────────────────────────────────────────────────────
+    ws.merge_cells(f'A{row}:J{row}')
+    c = ws.cell(row=row, column=1, value='QA Testing Document — DaltonSoft')
+    c.font = Font(name='Calibri', size=16, bold=True, color=BLANCO)
+    c.fill = fill(AZUL_OSC)
+    c.alignment = wrap('center')
+    ws.row_dimensions[row].height = 32
+    row += 1
+
+    # ── Encabezado del entregable ─────────────────────────────────────────
+    meta_fields = [
+        ('Entregable / SP', e.get('nombre') or ''),
+        ('Folio',           e.get('folio') or ''),
+        ('División',        e.get('division') or ''),
+        ('Responsable',     e.get('responsable') or ''),
+        ('Estatus',         e.get('estatus') or ''),
+        ('Fecha',           date.today().strftime('%d/%m/%Y')),
+    ]
+    for label, value in meta_fields:
+        ws.merge_cells(f'A{row}:C{row}')
+        c = ws.cell(row=row, column=1, value=label)
+        c.font = Font(name='Calibri', size=10, bold=True, color='000000')
+        c.fill = fill(AZUL_CLAR)
+        c.alignment = wrap('right')
+        c.border = borde
+
+        ws.merge_cells(f'D{row}:J{row}')
+        c = ws.cell(row=row, column=4, value=value)
+        c.font = cell_font(size=10)
+        c.alignment = wrap()
+        c.border = borde
+        row += 1
+
+    row += 1  # espacio
+
+    # ── Contexto del cambio ───────────────────────────────────────────────
+    ws.merge_cells(f'A{row}:J{row}')
+    c = ws.cell(row=row, column=1, value='CONTEXTO DEL CAMBIO')
+    c.font = header_font(size=11)
+    c.fill = fill(AZUL_MED)
+    c.alignment = wrap('center')
+    c.border = borde
+    ws.row_dimensions[row].height = 22
+    row += 1
+
+    ws.merge_cells(f'A{row}:J{row}')
+    c = ws.cell(row=row, column=1, value=e.get('descripcion') or '')
+    c.font = cell_font(size=10)
+    c.alignment = wrap()
+    c.border = borde
+    ws.row_dimensions[row].height = 60
+    row += 2
+
+    # ── Criterios de aceptación ───────────────────────────────────────────
+    ws.merge_cells(f'A{row}:J{row}')
+    c = ws.cell(row=row, column=1, value='CRITERIOS DE ACEPTACIÓN')
+    c.font = header_font(size=11)
+    c.fill = fill(AZUL_MED)
+    c.alignment = wrap('center')
+    c.border = borde
+    ws.row_dimensions[row].height = 22
+    row += 1
+
+    criterios_headers = ['#', 'Criterio', 'Estado Esperado', '', '', '', '', '', 'Estado Obtenido', 'Observaciones']
+    crit_cols = [1, 2, 3, 9, 10]
+    for col_idx, header in zip([1, 2, 3, 9, 10], ['#', 'Criterio', 'Estado Esperado', 'Estado Obtenido', 'Observaciones']):
+        ws.merge_cells(start_row=row, start_column=col_idx,
+                       end_row=row, end_column=col_idx + (5 if col_idx == 2 else 0))
+        c = ws.cell(row=row, column=col_idx, value=header)
+        c.font = header_font(size=10)
+        c.fill = fill(AZUL_OSC)
+        c.alignment = wrap('center')
+        c.border = borde
+    ws.merge_cells(f'D{row}:H{row}')   # merged blank under Estado Esperado cols
+    row += 1
+
+    for i in range(1, 6):
+        bg = AZUL_CLAR if i % 2 == 0 else BLANCO
+        ws.cell(row=row, column=1, value=i).border = borde
+        ws.cell(row=row, column=1).fill = fill(bg)
+        ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=8)
+        ws.cell(row=row, column=2).border = borde
+        ws.cell(row=row, column=2).fill = fill(bg)
+        ws.cell(row=row, column=9).fill = fill(bg)
+        ws.cell(row=row, column=9).border = borde
+        ws.cell(row=row, column=10).fill = fill(bg)
+        ws.cell(row=row, column=10).border = borde
+        ws.row_dimensions[row].height = 20
+        row += 1
+    row += 1
+
+    # ── Casos de prueba ────────────────────────────────────────────────────
+    ws.merge_cells(f'A{row}:J{row}')
+    c = ws.cell(row=row, column=1, value='CASOS DE PRUEBA')
+    c.font = header_font(size=11)
+    c.fill = fill(AZUL_MED)
+    c.alignment = wrap('center')
+    c.border = borde
+    ws.row_dimensions[row].height = 22
+    row += 1
+
+    cp_headers = ['#', 'Escenario', 'Descripción / Tags', 'Precondiciones\n(GIVEN)',
+                  'Acción\n(WHEN)', 'Resultado Esperado\n(THEN)',
+                  'Resultado Obtenido', 'Estado', 'Evidencia', 'Observaciones']
+    for col_idx, header in enumerate(cp_headers, 1):
+        c = ws.cell(row=row, column=col_idx, value=header)
+        c.font = header_font(size=10)
+        c.fill = fill(AZUL_OSC)
+        c.alignment = wrap('center')
+        c.border = borde
+    ws.row_dimensions[row].height = 36
+    cp_header_row = row
+    row += 1
+
+    # Validación: Estado (PASS / FAIL / BLOCKED / N/A)
+    dv_estado = DataValidation(
+        type='list',
+        formula1='"PASS,FAIL,BLOCKED,N/A"',
+        showDropDown=False,
+        showErrorMessage=True,
+        error='Usa: PASS, FAIL, BLOCKED o N/A',
+        errorTitle='Valor inválido'
+    )
+    ws.add_data_validation(dv_estado)
+
+    for i in range(1, 11):
+        bg = AZUL_CLAR if i % 2 == 0 else BLANCO
+        for col in range(1, 11):
+            c = ws.cell(row=row, column=col)
+            c.fill = fill(bg)
+            c.border = borde
+            c.font = cell_font(size=10)
+            c.alignment = wrap()
+        ws.cell(row=row, column=1, value=i)
+        ws.cell(row=row, column=1).alignment = wrap('center')
+        # Color condicional en col 8 (Estado) — se aplica vía validación
+        dv_estado.sqref += f'H{row} '
+        ws.row_dimensions[row].height = 40
+        row += 1
+
+    row += 1
+
+    # ── Notas QA ──────────────────────────────────────────────────────────
+    ws.merge_cells(f'A{row}:J{row}')
+    c = ws.cell(row=row, column=1, value='NOTAS PARA EL EQUIPO DE QA')
+    c.font = header_font(size=11)
+    c.fill = fill(AZUL_MED)
+    c.alignment = wrap('center')
+    c.border = borde
+    ws.row_dimensions[row].height = 22
+    row += 1
+
+    notas = [
+        '1. Documentar el conteo de registros totales vs. registros con valor como evidencia.',
+        '2. Completar la columna "Estado" con: PASS, FAIL, BLOCKED o N/A.',
+        '3. Adjuntar capturas de pantalla en la columna "Evidencia" (nombre del archivo o URL).',
+        '4. Si se detecta algún FAIL, escalar inmediatamente al equipo de desarrollo.',
+        '5. Una vez validado en pruebas, replicar en los demás ambientes.',
+    ]
+    for nota in notas:
+        ws.merge_cells(f'A{row}:J{row}')
+        c = ws.cell(row=row, column=1, value=nota)
+        c.font = cell_font(size=10)
+        c.fill = fill(GRIS)
+        c.alignment = wrap()
+        c.border = borde
+        ws.row_dimensions[row].height = 18
+        row += 1
+
+    # Freeze encabezado de casos de prueba
+    ws.freeze_panes = f'A{cp_header_row + 1}'
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  HOJA 2 — Azure DevOps Import
+    # ══════════════════════════════════════════════════════════════════════
+    ws2 = wb.create_sheet('ADO Import')
+    ws2.sheet_view.showGridLines = False
+
+    ado_note = ('Importa esta hoja en Azure DevOps: Boards → Work Items → '
+                'Import Work Items → selecciona este Excel. '
+                'Cada fila = un Test Case. Llena "Title", "Tags" y "Description" antes de importar.')
+    ws2.merge_cells('A1:K1')
+    c = ws2.cell(row=1, column=1, value=ado_note)
+    c.font = Font(name='Calibri', size=9, italic=True, color='595959')
+    c.alignment = Alignment(wrap_text=True, vertical='center')
+    ws2.row_dimensions[1].height = 36
+
+    ado_headers = [
+        'ID', 'Work Item Type', 'Title', 'State', 'Priority',
+        'Tags', 'Area Path', 'Iteration Path', 'Assigned To',
+        'Description', 'Steps (Acción → Resultado Esperado)',
+    ]
+    ado_col_widths = [8, 16, 40, 14, 10, 22, 22, 22, 22, 40, 60]
+    for i, (h, w) in enumerate(zip(ado_headers, ado_col_widths), 1):
+        c = ws2.cell(row=2, column=i, value=h)
+        c.font = header_font(size=10)
+        c.fill = fill(AZUL_OSC)
+        c.alignment = wrap('center')
+        c.border = borde
+        ws2.column_dimensions[get_column_letter(i)].width = w
+
+    # 10 filas de ejemplo pre-rellenas con defaults
+    for i in range(3, 13):
+        bg = AZUL_CLAR if i % 2 == 0 else BLANCO
+        defaults = {
+            2: 'Test Case',
+            3: f'[Escenario {i-2}] {e.get("nombre") or ""}',
+            4: 'Active',
+            5: 2,
+            6: '@qa @pendiente',
+            7: '',
+            8: '',
+            9: e.get('responsable') or '',
+            10: e.get('descripcion') or '',
+            11: 'WHEN: [acción] → THEN: [resultado esperado]',
+        }
+        for col in range(1, 12):
+            c = ws2.cell(row=i, column=col, value=defaults.get(col, ''))
+            c.fill = fill(bg)
+            c.border = borde
+            c.font = cell_font(size=10)
+            c.alignment = Alignment(wrap_text=True, vertical='center')
+        ws2.row_dimensions[i].height = 30
+
+    ws2.freeze_panes = 'A3'
+
+    # ── Serializar y enviar ────────────────────────────────────────────────
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    folio = (e.get('folio') or str(id)).replace('/', '-')
+    nombre_corto = (e.get('nombre') or 'entregable')[:25].replace(' ', '_')
+    filename = f'QA_{folio}_{nombre_corto}.xlsx'
+
+    return send_file(
+        output,
+        download_name=filename,
+        as_attachment=True,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
 
 
 if __name__ == '__main__':

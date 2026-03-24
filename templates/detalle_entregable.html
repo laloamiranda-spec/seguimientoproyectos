@@ -65,6 +65,9 @@
     <a class="btn btn-outline-primary" href="{{ url_for('editar_entregable', id=e.id) }}">
       <i class="bi bi-pencil me-1"></i>Editar
     </a>
+    <a class="btn btn-outline-success" href="{{ url_for('descargar_qa_layout', id=e.id) }}" title="Descargar layout QA para Azure DevOps">
+      <i class="bi bi-file-earmark-spreadsheet me-1"></i>Layout QA
+    </a>
     <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#modalEliminar">
       <i class="bi bi-trash me-1"></i>Eliminar
     </button>
