@@ -2057,30 +2057,32 @@ def descargar_qa_layout(id):
     ws.row_dimensions[row].height = 22
     row += 1
 
-    criterios_headers = ['#', 'Criterio', 'Estado Esperado', '', '', '', '', '', 'Estado Obtenido', 'Observaciones']
-    crit_cols = [1, 2, 3, 9, 10]
-    for col_idx, header in zip([1, 2, 3, 9, 10], ['#', 'Criterio', 'Estado Esperado', 'Estado Obtenido', 'Observaciones']):
-        ws.merge_cells(start_row=row, start_column=col_idx,
-                       end_row=row, end_column=col_idx + (5 if col_idx == 2 else 0))
-        c = ws.cell(row=row, column=col_idx, value=header)
+    # Encabezado criterios: 5 columnas simples (sin merges complejos)
+    crit_headers = ['#', 'Criterio', 'Estado Esperado', 'Estado Obtenido', 'Observaciones']
+    crit_widths  = [4, 40, 20, 20, 30]
+    for ci, (h, w) in enumerate(zip(crit_headers, crit_widths), 1):
+        c = ws.cell(row=row, column=ci, value=h)
         c.font = header_font(size=10)
         c.fill = fill(AZUL_OSC)
         c.alignment = wrap('center')
         c.border = borde
-    ws.merge_cells(f'D{row}:H{row}')   # merged blank under Estado Esperado cols
+        ws.column_dimensions[get_column_letter(ci)].width = w
+    # Columnas F-J vacías en encabezado
+    for ci in range(6, 11):
+        c = ws.cell(row=row, column=ci)
+        c.fill = fill(AZUL_OSC)
+        c.border = borde
     row += 1
 
     for i in range(1, 6):
         bg = AZUL_CLAR if i % 2 == 0 else BLANCO
-        ws.cell(row=row, column=1, value=i).border = borde
-        ws.cell(row=row, column=1).fill = fill(bg)
-        ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=8)
-        ws.cell(row=row, column=2).border = borde
-        ws.cell(row=row, column=2).fill = fill(bg)
-        ws.cell(row=row, column=9).fill = fill(bg)
-        ws.cell(row=row, column=9).border = borde
-        ws.cell(row=row, column=10).fill = fill(bg)
-        ws.cell(row=row, column=10).border = borde
+        for ci in range(1, 11):
+            c = ws.cell(row=row, column=ci)
+            c.fill = fill(bg)
+            c.border = borde
+            c.font = cell_font(size=10)
+            c.alignment = wrap()
+        ws.cell(row=row, column=1, value=i).alignment = wrap('center')
         ws.row_dimensions[row].height = 20
         row += 1
     row += 1
@@ -2119,6 +2121,7 @@ def descargar_qa_layout(id):
     )
     ws.add_data_validation(dv_estado)
 
+    cp_first_data_row = row
     for i in range(1, 11):
         bg = AZUL_CLAR if i % 2 == 0 else BLANCO
         for col in range(1, 11):
@@ -2129,10 +2132,11 @@ def descargar_qa_layout(id):
             c.alignment = wrap()
         ws.cell(row=row, column=1, value=i)
         ws.cell(row=row, column=1).alignment = wrap('center')
-        # Color condicional en col 8 (Estado) — se aplica vía validación
-        dv_estado.sqref += f'H{row} '
         ws.row_dimensions[row].height = 40
         row += 1
+
+    # Validación de lista en columna H (Estado)
+    dv_estado.sqref = f'H{cp_first_data_row}:H{row - 1}'
 
     row += 1
 
