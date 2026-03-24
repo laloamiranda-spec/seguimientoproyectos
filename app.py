@@ -72,32 +72,11 @@ _PG_CONNECT_KWARGS = dict(
 #  Capa de conexión — abstrae PostgreSQL (Neon) vs SQLite (local)
 # =============================================================================
 
-def _new_pg_conn():
+def get_pg_conn():
     """Crea una conexión fresca a Neon con keepalives habilitados."""
     conn = psycopg2.connect(DATABASE_URL, **_PG_CONNECT_KWARGS)
-    conn.autocommit = True   # cada comando es independiente; evita InFailedSqlTransaction
+    conn.autocommit = True
     return conn
-
-
-def get_pg_conn():
-    """Devuelve la conexión del request actual; la crea si no existe todavía."""
-    from flask import g
-    if not hasattr(g, '_pg_conn') or g._pg_conn is None or g._pg_conn.closed:
-        g._pg_conn = _new_pg_conn()
-    return g._pg_conn
-
-
-@app.teardown_appcontext
-def close_pg_conn(exc):
-    """Cierra la conexión al terminar cada request."""
-    from flask import g
-    conn = getattr(g, '_pg_conn', None)
-    if conn is not None:
-        try:
-            conn.close()
-        except Exception:
-            pass
-        g._pg_conn = None
 
 
 def get_sqlite_conn():
@@ -108,64 +87,51 @@ def get_sqlite_conn():
 
 
 def _pg_fetchall(sql, params):
-    """SELECT — reutiliza la conexión del request; reconecta si falla."""
     for intento in range(2):
+        conn = get_pg_conn()
         try:
-            conn = get_pg_conn()
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(sql, params)
                 return [dict(r) for r in cur.fetchall()]
         except psycopg2.OperationalError:
-            from flask import g
-            try:
-                if hasattr(g, '_pg_conn') and g._pg_conn:
-                    g._pg_conn.close()
-            except Exception:
-                pass
-            g._pg_conn = None
             if intento == 1:
                 raise
+        finally:
+            try: conn.close()
+            except Exception: pass
 
 
 def _pg_fetchone(sql, params):
     for intento in range(2):
+        conn = get_pg_conn()
         try:
-            conn = get_pg_conn()
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(sql, params)
                 row = cur.fetchone()
                 return dict(row) if row else None
         except psycopg2.OperationalError:
-            from flask import g
-            try:
-                if hasattr(g, '_pg_conn') and g._pg_conn:
-                    g._pg_conn.close()
-            except Exception:
-                pass
-            g._pg_conn = None
             if intento == 1:
                 raise
+        finally:
+            try: conn.close()
+            except Exception: pass
 
 
 def _pg_execute(sql, params):
     for intento in range(2):
+        conn = get_pg_conn()
         try:
-            conn = get_pg_conn()
             with conn.cursor() as cur:
                 cur.execute(sql, params)
-            return   # autocommit — no se necesita commit explícito
+            return
         except psycopg2.OperationalError:
-            from flask import g
-            try:
-                if hasattr(g, '_pg_conn') and g._pg_conn:
-                    g._pg_conn.close()
-            except Exception:
-                pass
-            g._pg_conn = None
             if intento == 1:
                 raise
         except Exception:
             raise
+        finally:
+            try: conn.close()
+            except Exception: pass
 
 
 def fetchall(sql, params=()):
